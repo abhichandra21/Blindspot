@@ -7,12 +7,15 @@
 
 ## 2. Open it the first time
 
-The app is not signed by Apple, so macOS blocks a normal double-click the first time.
+The app is not signed by Apple, so macOS blocks it the first time.
 Do one of these, once:
 
-- **Finder:** right-click `Blindspot.app`, choose **Open**, then **Open** again in the dialog.
-  On newer macOS, if there is no Open button, go to **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Blindspot.
-- **Terminal:** remove the download flag, then open it normally:
+- **System Settings** (macOS 15 and later):
+  1. Double-click `Blindspot.app`. macOS says it cannot be opened. Click **Done**.
+  2. Open **System Settings > Privacy & Security**, scroll down, and click **Open Anyway** next to Blindspot.
+  3. Confirm with your password or Touch ID, then click **Open Anyway** once more.
+- **Finder** (macOS 13 and 14 only): right-click `Blindspot.app`, choose **Open**, then **Open** again in the dialog.
+- **Terminal** (any version): remove the download flag, then open it normally:
 
   ```
   xattr -dr com.apple.quarantine /Applications/Blindspot.app
