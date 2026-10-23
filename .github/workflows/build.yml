@@ -1,0 +1,46 @@
+name: Build
+
+# Every push and pull request: check that the app builds.
+# A pushed tag like v0.2.0: also publish a GitHub release with Blindspot.zip.
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: |
+          # On a tag, v0.2.0 becomes version 0.2.0 in the app.
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            export VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          ./build.sh
+          codesign --verify --strict Blindspot.app
+
+      - name: Zip
+        # ditto keeps the app bundle intact, unlike plain zip.
+        run: ditto -c -k --keepParent Blindspot.app Blindspot.zip
+
+      - name: Keep the build for download from the run page
+        uses: actions/upload-artifact@v4
+        with:
+          name: Blindspot
+          path: Blindspot.zip
+
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" Blindspot.zip \
+            --title "Blindspot $GITHUB_REF_NAME" \
+            --notes "Download Blindspot.zip below. This build is not signed by Apple, so macOS blocks the first launch. See [Install](https://github.com/${GITHUB_REPOSITORY}/blob/main/docs/INSTALL.md) for the one-time steps."

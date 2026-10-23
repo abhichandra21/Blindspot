@@ -6,6 +6,8 @@ cd "$(dirname "$0")"
 app="Blindspot.app"
 # Keep the compiler target and the plist minimum in step.
 min_macos="13.0"
+# Release builds pass VERSION from the git tag; local builds use the default.
+version="${VERSION:-0.1}"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 swiftc -O -target "arm64-apple-macos$min_macos" main.swift -o "$app/Contents/MacOS/Blindspot"
@@ -18,7 +20,7 @@ cat > "$app/Contents/Info.plist" <<EOF
     <key>CFBundleName</key><string>Blindspot</string>
     <key>CFBundleExecutable</key><string>Blindspot</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>0.1</string>
+    <key>CFBundleShortVersionString</key><string>$version</string>
     <key>LSUIElement</key><true/>
     <key>LSMinimumSystemVersion</key><string>$min_macos</string>
 </dict>
