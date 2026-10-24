@@ -16,6 +16,8 @@ let teamsOwnerPrefix = "Microsoft Teams"
 let sharingIndicatorTitle = "Sharing Indicator"
 let allRiskyTabs = ["Chat", "Activity"]
 let pollIntervalSeconds = 1.0
+// Bounds each Accessibility call (the macOS default is about 6 seconds).
+let axMessagingTimeoutSeconds: Float = 1.0
 let launchAgentLabel = "com.abhichandra.blindspot"
 
 // User choices from the Settings window, stored in UserDefaults.
@@ -238,6 +240,8 @@ enum MinimizeOutcome: Equatable {
     case skippedAmbiguous
     case skippedStale
     case skippedUnreadable
+    // No longer wanted by the time of the write, e.g. after a pause.
+    case cancelled
     case failed(AXError)
 }
 
@@ -287,8 +291,10 @@ func axCandidate(_ window: AXUIElement) -> AXWindowCandidate {
 
 // Minimizes Teams windows through the Accessibility API, matching the window
 // list entries to accessibility windows by title and frame. Needs Accessibility permission.
+// stillWanted is checked right before each write, so a pause or the share
+// ending stops writes that have not been sent yet.
 @discardableResult
-func minimize(_ windows: [WindowInfo]) -> [MinimizeOutcome] {
+func minimize(_ windows: [WindowInfo], stillWanted: () -> Bool = { true }) -> [MinimizeOutcome] {
     var outcomes: [MinimizeOutcome] = []
     for (pid, group) in Dictionary(grouping: windows, by: \.pid) {
         let app = AXUIElementCreateApplication(pid)
@@ -296,7 +302,6 @@ func minimize(_ windows: [WindowInfo]) -> [MinimizeOutcome] {
         let readResult = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
         guard readResult == .success, let axWindows = value as? [AXUIElement] else {
             let error = readResult == .success ? AXError.failure : readResult
-            NSLog("Failed to read Teams windows: AX error \(error.rawValue)")
             outcomes += group.map { _ in .failed(error) }
             continue
         }
@@ -304,14 +309,13 @@ func minimize(_ windows: [WindowInfo]) -> [MinimizeOutcome] {
         for target in group {
             switch matchAXWindow(target, in: candidates) {
             case .match(let index):
+                guard stillWanted() else {
+                    outcomes.append(.cancelled)
+                    continue
+                }
                 let result = AXUIElementSetAttributeValue(axWindows[index], kAXMinimizedAttribute as CFString,
                                                           kCFBooleanTrue)
-                if result == .success {
-                    outcomes.append(.minimized)
-                } else {
-                    NSLog("Failed to minimize Teams window: AX error \(result.rawValue)")
-                    outcomes.append(.failed(result))
-                }
+                outcomes.append(result == .success ? .minimized : .failed(result))
             case .ambiguous: outcomes.append(.skippedAmbiguous)
             case .stale: outcomes.append(.skippedStale)
             case .unreadable: outcomes.append(.skippedUnreadable)
@@ -321,9 +325,81 @@ func minimize(_ windows: [WindowInfo]) -> [MinimizeOutcome] {
     return outcomes
 }
 
+// Retry every tick while exposed, so it still works once permission is granted.
+func minimizeAttemptTargets(_ state: GuardState, autoMinimize: Bool, trusted: Bool) -> [WindowInfo] {
+    autoMinimize && trusted ? state.autoMinimizeTargets : []
+}
+
+// A short reason shown under the warning when minimizing did not happen;
+// nil when every attempted window was minimized. A failure wins over a skip.
+func minimizeNote(_ outcomes: [MinimizeOutcome]) -> String? {
+    if outcomes.contains(where: { if case .failed = $0 { return true } else { return false } }) {
+        return "Not minimized: Teams did not respond"
+    }
+    if outcomes.contains(.skippedUnreadable) { return "Not minimized: couldn't read the Teams window" }
+    if outcomes.contains(.skippedAmbiguous) { return "Not minimized: more than one matching Teams window" }
+    if outcomes.contains(.skippedStale) { return "Not minimized: the Teams window changed" }
+    return nil
+}
+
+// Runs one minimize attempt at a time off the main thread, so the warning is
+// never held up by a slow Teams. Used only from the main thread, except the
+// generation check the running attempt makes before each write.
+final class MinimizeAttempts {
+    private let perform: ([WindowInfo], @escaping () -> Bool) -> [MinimizeOutcome]
+    private let runAsync: (@escaping () -> Void) -> Void
+    private let deliver: (@escaping () -> Void) -> Void
+    private var inFlight = false
+    private let generationLock = NSLock()
+    private var generation = 0
+
+    private var currentGeneration: Int {
+        generationLock.lock()
+        defer { generationLock.unlock() }
+        return generation
+    }
+
+    init(perform: @escaping ([WindowInfo], @escaping () -> Bool) -> [MinimizeOutcome] = { minimize($0, stillWanted: $1) },
+         runAsync: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.global(qos: .userInitiated).async(execute: $0) },
+         deliver: @escaping (@escaping () -> Void) -> Void = { DispatchQueue.main.async(execute: $0) }) {
+        self.perform = perform
+        self.runAsync = runAsync
+        self.deliver = deliver
+    }
+
+    // Does nothing while an attempt is still running, including a cancelled one.
+    func start(_ targets: [WindowInfo], completion: @escaping ([MinimizeOutcome]) -> Void) {
+        guard !inFlight else { return }
+        inFlight = true
+        let startedGeneration = currentGeneration
+        let perform = self.perform
+        let deliver = self.deliver
+        runAsync { [weak self] in
+            let outcomes = perform(targets, { self?.currentGeneration == startedGeneration })
+            deliver {
+                guard let self else { return }
+                self.inFlight = false
+                if startedGeneration == self.currentGeneration { completion(outcomes) }
+            }
+        }
+    }
+
+    // Stops the running attempt's remaining writes and drops its result, e.g.
+    // after a pause or the share ending. An Accessibility call already sent
+    // still finishes within the messaging timeout.
+    func cancel() {
+        generationLock.lock()
+        generation += 1
+        generationLock.unlock()
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let minimizeNoteLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
+    private let attempts = MinimizeAttempts()
+    private var minimizeNoteText: String?
     private let pauseItem = NSMenuItem(title: "Pause", action: #selector(togglePause), keyEquivalent: "")
     private var warningPanel: NSPanel?
     private var state: GuardState?
@@ -340,6 +416,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusLine.isEnabled = false
         menu.addItem(statusLine)
+        minimizeNoteLine.isEnabled = false
+        minimizeNoteLine.isHidden = true
+        menu.addItem(minimizeNoteLine)
         menu.addItem(.separator())
         pauseItem.target = self
         menu.addItem(pauseItem)
@@ -356,6 +435,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             CGRequestScreenCaptureAccess()
         }
         if Prefs.autoMinimize { requestAccessibility() }
+        // On the system-wide element this sets the timeout for every
+        // Accessibility element this app talks to, not just that one.
+        let timeoutResult = AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), axMessagingTimeoutSeconds)
+        if timeoutResult != .success { NSLog("Failed to set Accessibility timeout: AX error \(timeoutResult.rawValue)") }
         // Common mode keeps the timer firing while the menu is open.
         let timer = Timer(timeInterval: pollIntervalSeconds, repeats: true) { [weak self] _ in
             self?.refresh()
@@ -367,12 +450,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func refresh() {
         let newState = currentState(paused: paused)
         settings.refreshPermission()
-        // Retry every tick while exposed, so it still works once permission is granted.
-        let targets = newState.autoMinimizeTargets
-        if !targets.isEmpty, Prefs.autoMinimize, AXIsProcessTrusted() {
-            minimize(targets)
+        if newState != state { showState(newState) }
+        // Started after the warning is shown and run off the main thread, so a
+        // slow Teams cannot hold up the warning.
+        let targets = minimizeAttemptTargets(newState, autoMinimize: Prefs.autoMinimize,
+                                             trusted: AXIsProcessTrusted())
+        if targets.isEmpty {
+            attempts.cancel()
+            setMinimizeNote(nil)
+        } else {
+            attempts.start(targets) { [weak self] outcomes in self?.minimizeFinished(outcomes) }
         }
-        guard newState != state else { return }
+    }
+
+    private func minimizeFinished(_ outcomes: [MinimizeOutcome]) {
+        let note = minimizeNote(outcomes)
+        if let note, note != minimizeNoteText {
+            let errors = outcomes.compactMap { if case .failed(let error) = $0 { return error.rawValue } else { return nil } }
+            NSLog("\(note); AX errors \(errors)")
+        }
+        setMinimizeNote(note)
+    }
+
+    private func setMinimizeNote(_ note: String?) {
+        guard note != minimizeNoteText else { return }
+        minimizeNoteText = note
+        minimizeNoteLine.title = note ?? ""
+        minimizeNoteLine.isHidden = note == nil
+        updateToolTip()
+    }
+
+    private func showState(_ newState: GuardState) {
         let wasExposed = { if case .chatExposed = self.state { return true } else { return false } }()
         state = newState
 
@@ -417,8 +525,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             image?.isTemplate = true
         }
         statusItem.button?.image = image
-        statusItem.button?.toolTip = "\(text)\nClick to \(paused ? "resume" : "pause"), right-click for menu"
         statusLine.title = text
+        updateToolTip()
+    }
+
+    private func updateToolTip() {
+        let note = minimizeNoteText.map { "\n\($0)" } ?? ""
+        statusItem.button?.toolTip =
+            "\(statusLine.title)\(note)\nClick to \(paused ? "resume" : "pause"), right-click for menu"
     }
 
     // A small floating banner, shown only on a screen that is not being shared.

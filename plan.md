@@ -4,8 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1 and 2 are committed on the `review-fixes` branch, one commit each.
-The next implementation item is item 3.
+Items 1, 2, and 3 are committed on the `review-fixes` branch, one commit each.
+The next implementation item is item 5; item 4 is the owner's live test.
 The owner can run the item 4 live Teams call at any time; it will cover the accepted items together.
 
 Item 1 was done by the earlier Codex sessions: `plan-execution` implemented it and `code-review` reviewed it with no findings.
@@ -130,7 +130,7 @@ The script may use the existing local signing identity through Keychain; do not 
 
 - [x] 1. Truthful disabled/error/no-match statuses: implemented, regression checks passed, code review passed.
 - [x] 2. Safer automatic minimizing: implemented, 45/45 regression checks passed, code review passed after one fix. Open limit the owner chose to leave for item 4: a maximized-window share can look like a whole-display share, so a chat behind it may still be warned about and minimized. Codex rejected item 2 over this limit only. Also untested: whether Teams' AX frames match CG bounds within 1 point (if not, minimizing is safely skipped every time).
-- [ ] 3. Warnings before bounded Accessibility work: not started.
+- [x] 3. Warnings before bounded Accessibility work: implemented, 69/69 regression checks passed, code review passed after one fix. Known limits: a cancel that lands just after the final "still wanted" check cannot stop that one AX write; if the share switches between displays while an attempt is still reading, with no gap where nothing is exposed, the earlier display's chat can still be minimized (small fix if wanted: cancel when targets change). Codex rejected item 3 over these two limits only. Untested live: warning drawing before the attempt, whether the 1 s AX timeout suits a busy Teams. Item 7 must describe the new "Not minimized: ..." menu line and tooltip.
 - [ ] 4. Real Teams share and display checks: not performed.
 - [ ] 5. Clear first-run permissions and safe warning preview: not started.
 - [ ] 6. Reliable Start at Login: not started.

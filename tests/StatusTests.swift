@@ -169,6 +169,89 @@ struct StatusTests {
         check(matchAXWindow(target, in: [candidate(nil, nil)]) == .unreadable,
               "an untitled window with no frame is not guessed")
 
+        let displayShare = detect([indicator, chat])
+        check(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: true) == [chat],
+              "display share with minimizing on is attempted")
+        check(minimizeAttemptTargets(displayShare, autoMinimize: false, trusted: true).isEmpty,
+              "no attempt when minimizing is off")
+        check(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: false).isEmpty,
+              "no attempt without Accessibility trust")
+        check(minimizeAttemptTargets(windowShare, autoMinimize: true, trusted: true).isEmpty,
+              "no attempt for a window share")
+        check(minimizeAttemptTargets(.paused, autoMinimize: true, trusted: true).isEmpty,
+              "no attempt while paused")
+
+        var performed = 0
+        var background: [() -> Void] = []
+        var mainQueue: [() -> Void] = []
+        var delivered: [[MinimizeOutcome]] = []
+        var nextOutcomes: [MinimizeOutcome] = [.failed(.cannotComplete)]
+        var betweenReadAndWrite: () -> Void = {}
+        var writes = 0
+        let attempts = MinimizeAttempts(perform: { _, stillWanted in
+            performed += 1
+            betweenReadAndWrite()
+            guard stillWanted() else { return [.cancelled] }
+            writes += 1
+            return nextOutcomes
+        }, runAsync: { background.append($0) }, deliver: { mainQueue.append($0) })
+        func runPending() {
+            let work = background
+            background = []
+            work.forEach { $0() }
+            let results = mainQueue
+            mainQueue = []
+            results.forEach { $0() }
+        }
+
+        attempts.start([chat]) { delivered.append($0) }
+        check(performed == 0 && delivered.isEmpty, "starting an attempt does not run it on the caller")
+        attempts.start([chat]) { delivered.append($0) }
+        runPending()
+        check(performed == 1 && delivered == [[.failed(.cannotComplete)]],
+              "only one attempt runs while one is in flight")
+        nextOutcomes = [.minimized]
+        attempts.start([chat]) { delivered.append($0) }
+        runPending()
+        check(performed == 2 && delivered.last == [.minimized], "a failed attempt is retried on the next start")
+
+        delivered = []
+        attempts.start([chat]) { delivered.append($0) }
+        attempts.cancel()
+        attempts.start([chat]) { delivered.append($0) }
+        check(background.count <= 1, "cancel does not allow a second attempt while the first runs")
+        runPending()
+        check(performed == 3, "cancel and restart before the old attempt finishes runs it only once")
+        check(delivered.isEmpty, "a cancelled attempt's result is dropped")
+        attempts.start([chat]) { delivered.append($0) }
+        runPending()
+        check(performed == 4 && delivered == [[.minimized]], "after the cancelled attempt finishes, a new one runs")
+        check(writes == 3, "an attempt cancelled before it runs makes no write")
+
+        delivered = []
+        betweenReadAndWrite = { attempts.cancel() }
+        attempts.start([chat]) { delivered.append($0) }
+        runPending()
+        check(performed == 5 && writes == 3, "a cancel between reading and writing stops the write")
+        check(delivered.isEmpty, "a cancel between reading and writing drops the result")
+        betweenReadAndWrite = {}
+        attempts.start([chat]) { delivered.append($0) }
+        runPending()
+        check(writes == 4 && delivered == [[.minimized]], "the next attempt after that cancel writes")
+
+        check(minimizeNote([]) == nil, "no note when nothing was attempted")
+        check(minimizeNote([.minimized, .minimized]) == nil, "no note when everything was minimized")
+        check(minimizeNote([.skippedAmbiguous]) == "Not minimized: more than one matching Teams window",
+              "ambiguous note")
+        check(minimizeNote([.skippedStale]) == "Not minimized: the Teams window changed", "stale note")
+        check(minimizeNote([.skippedUnreadable]) == "Not minimized: couldn't read the Teams window",
+              "unreadable note")
+        check(minimizeNote([.failed(.cannotComplete)]) == "Not minimized: Teams did not respond",
+              "failed or timed-out note")
+        check(minimizeNote([.minimized, .skippedStale, .failed(.failure)]) == "Not minimized: Teams did not respond",
+              "a mixed result reports the failure")
+        check(minimizeNote([.cancelled]) == nil, "a cancelled write adds no note")
+
         print("\(checks - failures)/\(checks) checks passed")
         if failures > 0 { exit(1) }
     }
