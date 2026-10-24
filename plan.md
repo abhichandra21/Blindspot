@@ -4,8 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1, 2, 3, 5, 6, and 6b are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
-The next implementation item is item 7; item 4 is the owner's live test.
+Items 1, 2, 3, 5, 6, 6b, and 7 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
+The next implementation item is item 8; item 4 is the owner's live test.
 The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
 If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
 
@@ -133,7 +133,7 @@ The script may use the existing local signing identity through Keychain; do not 
 - [x] 5. Clear first-run permissions and safe warning preview: implemented, 95/95 regression checks passed, code review and Codex accepted after three fixes. Minimizing is now opt-in when no choice was stored (old versions stored it only on a checkbox click). The test warning shows only while checks run and nothing is shared. Known limit: the test sound can overlap a real warning's sound within about 1 s. Tests keep their settings under the temp dir, not ~/Library/Preferences. Open for the item 4 call: first-launch Settings flow, the Allow button and prompt, the relaunch hint, the test banner on one and two screens and its refusals, the Accessibility prompt when minimizing is turned on, and the new Settings layout. Item 7 must refresh settings-permissions.png and describe the new Settings text.
 - [x] 6. Reliable Start at Login: implemented, 117/117 regression checks passed, code review accepted with no findings. Codex rejected over one limit. Known limits: if launchctl enable succeeds but the follow-up check fails, the box stays on with "Couldn't check Start at Login."; if a stale plist is repaired and then launchctl enable fails, the box shows off while the repaired plist may still start this copy at the next login (the next Settings open shows the truth). Item 4 caution: do not toggle Start at Login in a temporary test build, or the real login entry will point at it; turn it on again from the real copy afterwards. Open for the item 4 call: a real login after enabling, moving the app and re-enabling, real print-disabled output, and the login label in Settings.
 - [x] 6b. Swift package layout (owner decision), done: code review and Codex accepted after one fix (build.sh keeps compiling with swiftc so the app records the real SDK). Originally planned as: move code from main.swift into a few files under `Sources/Blindspot/` (detection, minimizing, login item, settings, app entry), convert the tests to a `Tests/` target run with `swift test`, and keep `build.sh` producing the same signed `.app`. No behavior changes; all existing checks must still pass. Done before item 7 so the docs describe the final layout.
-- [ ] 7. Accurate existing documentation and warning screenshot: not started.
+- [x] 7. Accurate existing documentation: README, INSTALL, and BUILDING updated; code review and Codex accepted after one round of wording fixes. Open for the owner during the item 4 call: capture warning.png (Show Test Warning banner, dummy content) and refresh settings-general.png, settings-detection.png, and settings-permissions.png; then add a one-line image tag so the README leads with the warning.
 - [ ] 8. A simple app icon: not started.
 - [ ] 9. Smaller CI permissions and pinned actions: not started.
 - [ ] 10. A personal Homebrew cask: not started.
@@ -271,7 +271,7 @@ Actual login/launchctl mutations require the owner's specific instruction; do no
 5. Explain that window metadata is read locally, settings/login information is stored, and the diagnostic command may print titles.
 6. Keep the normal macOS approval steps and optional Accessibility explanation accurate.
    Describe possible permission resets after changed ad-hoc builds without claiming every update always breaks both grants.
-7. Do not prescribe an Apple developer account, add a website, or add separate planning/marketing documents.
+7. Do not prescribe an Apple developer account or add separate planning/marketing documents. The owner-requested product page in `site/` is separate from this item.
 
 **Checks:** every described status and default matches the final code; links work; install/update/uninstall instructions agree; screenshots have no private data; unsupported cases are not advertised as verified.
 Inspect documentation diffs directly; do not add tests that merely assert prose strings.
@@ -334,7 +334,7 @@ Homebrew does not remove the macOS approval step or guarantee permission continu
 
 ## Do not add these to the current fixes
 
-Intel/universal binaries, Apple membership or notarization, other meeting apps, a generalized localization configuration UI, Sparkle, a marketing site, a contribution program, a detector architecture, or measured performance claims without actual measurements.
+Intel/universal binaries, Apple membership or notarization, other meeting apps, a generalized localization configuration UI, Sparkle, a contribution program, a detector architecture, or measured performance claims without actual measurements.
 License/social-preview housekeeping, timer tolerance/idle polling, a timed pause, and activating an existing copy are later tasks unless the owner explicitly reprioritizes them.
 
 ## Suggested skills and official references
