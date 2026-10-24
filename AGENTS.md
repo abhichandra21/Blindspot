@@ -1,6 +1,5 @@
 # Blindspot agent instructions
 
-Read [plan.md](plan.md) for the handoff status, completed item, test commands, and remaining fixes.
 The owner's later instructions take precedence.
 
 - Keep explanations plain and concise.
