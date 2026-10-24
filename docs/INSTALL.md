@@ -31,8 +31,10 @@ A shield appears in the menu bar.
 | **Screen Recording** | Required. Lets Blindspot read window titles, which is how it spots a Teams share and Teams chat windows. Blindspot never records or saves your screen. |
 | **Accessibility** | Optional. Only needed to minimize Teams windows automatically. |
 
-macOS asks for both on first launch.
-If you miss the prompts, right-click the shield, choose **Settings**, and open the **Permissions** tab.
+On first launch, Blindspot opens **Settings** on the **Permissions** tab; click **Allow Screen Recording...** to get the macOS prompt.
+Accessibility is asked for only when you turn on minimizing in the **Detection** tab.
+If you never changed the minimize setting, minimizing is now off until you turn it on in **Detection**.
+To come back later, right-click the shield, choose **Settings**, and open the **Permissions** tab.
 Each permission shows a green check or a red cross, with a button to the right page in System Settings.
 If macOS offers **Quit & Reopen** after you turn one on, accept it.
 

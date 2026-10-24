@@ -18,6 +18,7 @@ let allRiskyTabs = ["Chat", "Activity"]
 let pollIntervalSeconds = 1.0
 // Bounds each Accessibility call (the macOS default is about 6 seconds).
 let axMessagingTimeoutSeconds: Float = 1.0
+let testWarningSeconds: TimeInterval = 3
 let launchAgentLabel = "com.abhichandra.blindspot"
 
 // User choices from the Settings window, stored in UserDefaults.
@@ -25,18 +26,29 @@ enum Prefs {
     static let soundKey = "playSound"
     static let tabsKey = "riskyTabs"
     static let minimizeKey = "autoMinimize"
+    static let screenRequestedKey = "screenRecordingRequested"
+    // Tests swap in a throwaway suite so they never touch the real settings.
+    static var store: UserDefaults = .standard
 
+    // Off until the user turns it on. Earlier versions only stored this when
+    // the checkbox was clicked, so a stored value is always a real choice.
     static var autoMinimize: Bool {
-        get { UserDefaults.standard.object(forKey: minimizeKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: minimizeKey) }
+        get { store.object(forKey: minimizeKey) as? Bool ?? false }
+        set { store.set(newValue, forKey: minimizeKey) }
     }
     static var playSound: Bool {
-        get { UserDefaults.standard.object(forKey: soundKey) as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: soundKey) }
+        get { store.object(forKey: soundKey) as? Bool ?? true }
+        set { store.set(newValue, forKey: soundKey) }
     }
     static var riskyTabs: [String] {
-        get { UserDefaults.standard.stringArray(forKey: tabsKey) ?? allRiskyTabs }
-        set { UserDefaults.standard.set(newValue, forKey: tabsKey) }
+        get { store.stringArray(forKey: tabsKey) ?? allRiskyTabs }
+        set { store.set(newValue, forKey: tabsKey) }
+    }
+    // Set once the macOS Screen Recording prompt has been shown, since macOS
+    // only shows it once.
+    static var screenRecordingRequested: Bool {
+        get { store.bool(forKey: screenRequestedKey) }
+        set { store.set(newValue, forKey: screenRequestedKey) }
     }
 }
 
@@ -394,6 +406,51 @@ final class MinimizeAttempts {
     }
 }
 
+// Opens Settings only before the user has seen the macOS prompt, so someone
+// who chose to deny is not shown a window at every login.
+func shouldOpenSetupAtLaunch(screenGranted: Bool, screenRequested: Bool) -> Bool {
+    !screenGranted && !screenRequested
+}
+
+enum ScreenRecordingAction: Equatable {
+    case request
+    case openSettings
+}
+
+// macOS shows its Screen Recording prompt only once; after that the way to
+// allow it is System Settings.
+func screenRecordingAction(granted: Bool, requested: Bool) -> ScreenRecordingAction {
+    !granted && !requested ? .request : .openSettings
+}
+
+func screenRecordingHint(granted: Bool, requested: Bool) -> String? {
+    requested && !granted ? "If you already allowed it, quit and reopen Blindspot." : nil
+}
+
+func accessibilityNote(_ state: GuardState, autoMinimize: Bool, trusted: Bool) -> String? {
+    autoMinimize && !trusted && !state.autoMinimizeTargets.isEmpty
+        ? "Not minimized: needs Accessibility permission" : nil
+}
+
+enum PreviewPlacement: Equatable {
+    case anyScreen
+    case sharing
+    case checksOff
+    case unknown
+}
+
+// The test warning is shown only while checks are running and see no Teams
+// share, so a share that starts afterwards changes the state and hides it.
+// Without a reliable window list a share cannot be ruled out, so it is not
+// shown at all.
+func previewPlacement(state: GuardState?, windows: [WindowInfo]?, permission: Bool) -> PreviewPlacement {
+    guard permission, let windows else { return .unknown }
+    let sharing = windows.contains { $0.owner.hasPrefix(teamsOwnerPrefix) && $0.title == sharingIndicatorTitle }
+    if sharing { return .sharing }
+    if state == .paused || state == .checksDisabled { return .checksOff }
+    return state == .notSharing ? .anyScreen : .unknown
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     private let statusLine = NSMenuItem(title: "", action: nil, keyEquivalent: "")
@@ -405,11 +462,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var state: GuardState?
     // Not saved on purpose: every launch starts unpaused so a pause is never forgotten.
     private var paused = false
-    private lazy var settings = SettingsWindowController { [weak self] in
+    private lazy var settings = SettingsWindowController(onChange: { [weak self] in
         // A changed tab choice should take effect now, not on the next change.
         self?.state = nil
         self?.refresh()
-    }
+    }, onPreview: { [weak self] in
+        self?.showTestWarning()
+    })
 
     private let menu = NSMenu()
 
@@ -431,10 +490,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.action = #selector(statusItemClicked)
         statusItem.button?.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
-        if !CGPreflightScreenCaptureAccess() {
-            CGRequestScreenCaptureAccess()
+        // Explain before macOS asks: Settings opens on Permissions, and the
+        // prompt appears only when the user clicks the button there.
+        if shouldOpenSetupAtLaunch(screenGranted: CGPreflightScreenCaptureAccess(),
+                                   screenRequested: Prefs.screenRecordingRequested) {
+            settings.showPermissions()
         }
-        if Prefs.autoMinimize { requestAccessibility() }
         // On the system-wide element this sets the timeout for every
         // Accessibility element this app talks to, not just that one.
         let timeoutResult = AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), axMessagingTimeoutSeconds)
@@ -453,11 +514,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if newState != state { showState(newState) }
         // Started after the warning is shown and run off the main thread, so a
         // slow Teams cannot hold up the warning.
-        let targets = minimizeAttemptTargets(newState, autoMinimize: Prefs.autoMinimize,
-                                             trusted: AXIsProcessTrusted())
+        let trusted = AXIsProcessTrusted()
+        let targets = minimizeAttemptTargets(newState, autoMinimize: Prefs.autoMinimize, trusted: trusted)
         if targets.isEmpty {
             attempts.cancel()
-            setMinimizeNote(nil)
+            setMinimizeNote(accessibilityNote(newState, autoMinimize: Prefs.autoMinimize, trusted: trusted))
         } else {
             attempts.start(targets) { [weak self] outcomes in self?.minimizeFinished(outcomes) }
         }
@@ -538,7 +599,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // A small floating banner, shown only on a screen that is not being shared.
     // sharingType = .none does not reliably hide windows from ScreenCaptureKit,
     // so with no unshared screen we skip the banner and rely on sound + icon.
-    private func showWarning(_ text: String, avoiding shared: CGRect) {
+    @discardableResult
+    private func showWarning(_ text: String, avoiding shared: CGRect) -> Bool {
         let unshared = NSScreen.screens.first { screen in
             guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
             else { return false }
@@ -546,7 +608,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         guard let screen = unshared else {
             hideWarning()
-            return
+            return false
         }
         if warningPanel == nil {
             let panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 420, height: 56),
@@ -566,11 +628,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.contentView?.addSubview(label)
             warningPanel = panel
         }
-        guard let panel = warningPanel else { return }
+        guard let panel = warningPanel else { return false }
         (panel.contentView?.viewWithTag(1) as? NSTextField)?.stringValue = text
         let f = screen.visibleFrame
         panel.setFrameOrigin(NSPoint(x: f.midX - panel.frame.width / 2, y: f.maxY - panel.frame.height - 12))
         panel.orderFrontRegardless()
+        return true
+    }
+
+    // Shows the banner and plays the sound with sample text. Never minimizes.
+    // Returns why nothing was shown, or nil.
+    private func showTestWarning() -> String? {
+        if case .chatExposed = state { return "A real warning is showing." }
+        switch previewPlacement(state: state, windows: onScreenWindows(),
+                                permission: CGPreflightScreenCaptureAccess()) {
+        case .unknown: return "Can't show a test banner without confirming no screen is being shared."
+        case .sharing: return "Stop sharing to show a test warning."
+        case .checksOff: return "Resume checks to show a test warning."
+        case .anyScreen: break
+        }
+        guard showWarning("Test: Teams Chat may be visible in your screen share", avoiding: .null) else {
+            return "No screen available to show the test banner on."
+        }
+        if Prefs.playSound { NSSound(named: "Funk")?.play() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + testWarningSeconds) { [weak self] in
+            guard let self else { return }
+            if case .chatExposed = self.state { return }
+            self.hideWarning()
+        }
+        return nil
     }
 
     private func hideWarning() {
@@ -611,12 +697,16 @@ func requestAccessibility() {
 // explanation underneath, like most Mac menu bar apps.
 final class SettingsWindowController: NSObject {
     private let onChange: () -> Void
+    private let onPreview: () -> String?
     private var window: NSWindow?
+    private var tabsController: NSTabViewController?
 
     private let loginBox = NSButton(checkboxWithTitle: "Start at Login", target: nil, action: nil)
     private let soundBox = NSButton(checkboxWithTitle: "Play Warning Sound", target: nil, action: nil)
     private let minimizeBox = NSButton(checkboxWithTitle: "Minimize Exposed Teams Windows", target: nil, action: nil)
     private var tabBoxes: [NSButton] = []
+    private let previewButton = NSButton(title: "Show Test Warning", target: nil, action: nil)
+    private let previewStatus = secondary("")
     private let screenStatus = PermissionRow(
         title: "Screen Recording",
         detail: "Required. Lets the app see which Teams windows are open and when Teams is sharing.",
@@ -626,8 +716,16 @@ final class SettingsWindowController: NSObject {
         detail: "Needed only to minimize Teams windows during a share.",
         settingsAnchor: "Privacy_Accessibility")
 
-    init(onChange: @escaping () -> Void) {
+    init(onChange: @escaping () -> Void, onPreview: @escaping () -> String?) {
         self.onChange = onChange
+        self.onPreview = onPreview
+        super.init()
+        screenStatus.onButton = { [weak self] in self?.screenRecordingClicked() }
+    }
+
+    func showPermissions() {
+        show()
+        tabsController?.selectedTabViewItemIndex = 2
     }
 
     func show() {
@@ -647,7 +745,12 @@ final class SettingsWindowController: NSObject {
 
     func refreshPermission() {
         guard window?.isVisible == true else { return }
-        screenStatus.update(granted: CGPreflightScreenCaptureAccess(), required: true)
+        let screenGranted = CGPreflightScreenCaptureAccess()
+        let requested = Prefs.screenRecordingRequested
+        let action = screenRecordingAction(granted: screenGranted, requested: requested)
+        screenStatus.update(granted: screenGranted, required: true,
+                            hint: screenRecordingHint(granted: screenGranted, requested: requested),
+                            buttonTitle: action == .request ? "Allow Screen Recording..." : nil)
         accessibilityStatus.update(granted: AXIsProcessTrusted(), required: Prefs.autoMinimize)
     }
 
@@ -659,11 +762,20 @@ final class SettingsWindowController: NSObject {
         minimizeBox.target = self
         minimizeBox.action = #selector(minimizeChanged)
         tabBoxes = allRiskyTabs.map { NSButton(checkboxWithTitle: $0, target: self, action: #selector(tabsChanged)) }
+        previewButton.target = self
+        previewButton.action = #selector(previewClicked)
+        previewStatus.isHidden = true
+        let previewRow = NSStackView(views: [previewButton, previewStatus])
+        previewRow.orientation = .vertical
+        previewRow.alignment = .leading
+        previewRow.spacing = 4
 
         let quit = NSButton(title: "Quit", target: NSApp, action: #selector(NSApplication.terminate(_:)))
         let general = page([
             option(loginBox, "Automatically opens the app when you log in to your Mac."),
             option(soundBox, "Plays a short sound when a Teams chat may be visible in your share."),
+            option(previewRow, "Shows the warning with sample text for a few seconds. "
+                + "Never minimizes anything.", title: "Test Warning"),
             note("Click the menu bar shield to pause or resume. Right-click it for Settings and Quit."),
         ], footer: quit)
 
@@ -672,11 +784,16 @@ final class SettingsWindowController: NSObject {
         let detection = page([
             option(tabRow, "Warn when these Teams tabs are on the screen you are sharing. "
                 + "Both can show message text.", title: "Watch These Teams Tabs"),
-            option(minimizeBox, "Minimizes those Teams windows as soon as a share starts. "
+            option(minimizeBox, "Minimizes those Teams windows when a whole screen is shared. "
                 + "Needs Accessibility permission."),
         ])
 
-        let permissions = page([screenStatus.view, accessibilityStatus.view])
+        let permissions = page([
+            note("Blindspot checks about once a second which Teams windows are on the screen you are sharing. "
+                + "It reads window titles and positions on this Mac; it never captures images of your screen "
+                + "or uploads anything. Minimizing is optional; choose it in Detection."),
+            screenStatus.view, accessibilityStatus.view,
+        ])
 
         let tabs = NSTabViewController()
         tabs.tabStyle = .toolbar
@@ -699,6 +816,7 @@ final class SettingsWindowController: NSObject {
             tabs.addTabViewItem(item)
         }
 
+        tabsController = tabs
         let w = NSWindow(contentViewController: tabs)
         w.styleMask = [.titled, .closable]
         w.title = "Blindspot Settings"
@@ -813,6 +931,24 @@ final class SettingsWindowController: NSObject {
         onChange()
     }
 
+    private func screenRecordingClicked() {
+        switch screenRecordingAction(granted: CGPreflightScreenCaptureAccess(),
+                                     requested: Prefs.screenRecordingRequested) {
+        case .request:
+            Prefs.screenRecordingRequested = true
+            CGRequestScreenCaptureAccess()
+        case .openSettings:
+            screenStatus.openSystemSettings()
+        }
+        refreshPermission()
+    }
+
+    @objc private func previewClicked() {
+        let problem = onPreview()
+        previewStatus.stringValue = problem ?? ""
+        previewStatus.isHidden = problem == nil
+    }
+
     @objc private func minimizeChanged() {
         Prefs.autoMinimize = minimizeBox.state == .on
         if Prefs.autoMinimize && !AXIsProcessTrusted() { requestAccessibility() }
@@ -831,11 +967,14 @@ func secondary(_ text: String) -> NSTextField {
 }
 
 // One permission: a green check or red cross, its name, why it is needed,
-// and a button to the matching System Settings page.
+// and a button to the matching System Settings page, unless onButton replaces it.
 final class PermissionRow: NSObject {
     let view: NSView
+    var onButton: (() -> Void)?
     private let icon = NSImageView()
     private let status = NSTextField(labelWithString: "")
+    private let hintLabel = secondary("")
+    private let button = NSButton(title: "Open System Settings...", target: nil, action: nil)
     private let anchor: String
 
     init(title: String, detail: String, settingsAnchor: String) {
@@ -845,18 +984,22 @@ final class PermissionRow: NSObject {
         status.font = .systemFont(ofSize: NSFont.smallSystemFontSize + 1)
         let titleRow = NSStackView(views: [icon, name, status])
         titleRow.spacing = 6
-        let button = NSButton(title: "Open System Settings...", target: nil, action: nil)
-        let stack = NSStackView(views: [titleRow, secondary(detail), button])
+        hintLabel.isHidden = true
+        let stack = NSStackView(views: [titleRow, secondary(detail), hintLabel, button])
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.spacing = 6
         view = stack
         super.init()
         button.target = self
-        button.action = #selector(openSettings)
+        button.action = #selector(buttonClicked)
     }
 
-    func update(granted: Bool, required: Bool) {
+    func update(granted: Bool, required: Bool, hint: String? = nil, buttonTitle: String? = nil) {
+        hintLabel.stringValue = hint ?? ""
+        hintLabel.isHidden = hint == nil
+        button.title = buttonTitle ?? "Open System Settings..."
+
         let symbol = granted ? "checkmark.circle.fill" : (required ? "xmark.circle.fill" : "minus.circle.fill")
         icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
         icon.contentTintColor = granted ? .systemGreen : (required ? .systemRed : .systemGray)
@@ -864,7 +1007,11 @@ final class PermissionRow: NSObject {
         status.textColor = .secondaryLabelColor
     }
 
-    @objc private func openSettings() {
+    @objc private func buttonClicked() {
+        if let onButton { onButton() } else { openSystemSettings() }
+    }
+
+    func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
         }

@@ -1,4 +1,5 @@
 import CoreGraphics
+import Foundation
 
 struct StatusTests {
     static func main() {
@@ -251,6 +252,68 @@ struct StatusTests {
         check(minimizeNote([.minimized, .skippedStale, .failed(.failure)]) == "Not minimized: Teams did not respond",
               "a mixed result reports the failure")
         check(minimizeNote([.cancelled]) == nil, "a cancelled write adds no note")
+
+        // An absolute suite path keeps the throwaway settings file out of
+        // ~/Library/Preferences.
+        let suiteName = FileManager.default.temporaryDirectory
+            .appendingPathComponent("blindspot-tests-\(UUID().uuidString)").path
+        let realStore = Prefs.store
+        Prefs.store = UserDefaults(suiteName: suiteName)!
+        check(!Prefs.autoMinimize, "minimizing is off when no choice is stored")
+        Prefs.autoMinimize = true
+        check(Prefs.autoMinimize, "a stored choice to minimize is kept")
+        Prefs.autoMinimize = false
+        check(!Prefs.autoMinimize, "a stored choice not to minimize is kept")
+        check(!Prefs.screenRecordingRequested, "Screen Recording has not been requested in fresh settings")
+        Prefs.store.removePersistentDomain(forName: suiteName)
+        Prefs.store = realStore
+        try? FileManager.default.removeItem(atPath: suiteName + ".plist")
+
+        check(shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: false),
+              "first launch without Screen Recording opens setup")
+        check(!shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: true),
+              "a launch after the prompt was shown does not open setup again")
+        check(!shouldOpenSetupAtLaunch(screenGranted: true, screenRequested: false),
+              "a launch with Screen Recording allowed does not open setup")
+        check(screenRecordingAction(granted: false, requested: false) == .request,
+              "the setup button asks macOS the first time")
+        check(screenRecordingAction(granted: false, requested: true) == .openSettings,
+              "after the prompt was shown the button opens System Settings")
+        check(screenRecordingAction(granted: true, requested: false) == .openSettings,
+              "with access allowed the button opens System Settings")
+        check(screenRecordingHint(granted: false, requested: true) == "If you already allowed it, quit and reopen Blindspot.",
+              "relaunch hint after the prompt without access")
+        check(screenRecordingHint(granted: false, requested: false) == nil, "no relaunch hint before the prompt")
+        check(screenRecordingHint(granted: true, requested: true) == nil, "no relaunch hint once allowed")
+
+        let accessibilityText = "Not minimized: needs Accessibility permission"
+        check(accessibilityNote(displayShare, autoMinimize: true, trusted: false) == accessibilityText,
+              "minimizing on without Accessibility explains why nothing was minimized")
+        check(accessibilityNote(displayShare, autoMinimize: false, trusted: false) == nil,
+              "no Accessibility note when minimizing is off")
+        check(accessibilityNote(displayShare, autoMinimize: true, trusted: true) == nil,
+              "no Accessibility note when trusted")
+        check(accessibilityNote(windowShare, autoMinimize: true, trusted: false) == nil,
+              "no Accessibility note for a window share")
+        check(accessibilityNote(.paused, autoMinimize: true, trusted: false) == nil,
+              "no Accessibility note while paused")
+
+        check(previewPlacement(state: .notSharing, windows: [indicator, chat], permission: true) == .sharing,
+              "test warning is not shown during a Teams share")
+        check(previewPlacement(state: .notSharing, windows: [chat], permission: true) == .anyScreen,
+              "test warning can use any screen when nothing is shared")
+        check(previewPlacement(state: .notSharing, windows: nil, permission: true) == .unknown,
+              "test warning is hidden when windows cannot be read")
+        check(previewPlacement(state: .notSharing, windows: [indicator], permission: false) == .unknown,
+              "test warning is hidden without Screen Recording")
+        check(previewPlacement(state: .notSharing, windows: [otherIndicator], permission: true) == .anyScreen,
+              "another app's indicator does not count as a share for the test warning")
+        check(previewPlacement(state: .paused, windows: [chat], permission: true) == .checksOff,
+              "test warning is not shown while paused, since a new share would not hide it")
+        check(previewPlacement(state: .checksDisabled, windows: [chat], permission: true) == .checksOff,
+              "test warning is not shown while checks are disabled")
+        check(previewPlacement(state: nil, windows: [chat], permission: true) == .unknown,
+              "test warning is not shown before the first check")
 
         print("\(checks - failures)/\(checks) checks passed")
         if failures > 0 { exit(1) }

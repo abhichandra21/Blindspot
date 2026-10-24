@@ -4,9 +4,10 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1, 2, and 3 are committed on the `review-fixes` branch, one commit each.
-The next implementation item is item 5; item 4 is the owner's live test.
-The owner can run the item 4 live Teams call at any time; it will cover the accepted items together.
+Items 1, 2, 3, and 5 are committed on the `review-fixes` branch, one commit each.
+The next implementation item is item 6; item 4 is the owner's live test.
+The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
+If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
 
 Item 1 was done by the earlier Codex sessions: `plan-execution` implemented it and `code-review` reviewed it with no findings.
 
@@ -132,7 +133,7 @@ The script may use the existing local signing identity through Keychain; do not 
 - [x] 2. Safer automatic minimizing: implemented, 45/45 regression checks passed, code review passed after one fix. Open limit the owner chose to leave for item 4: a maximized-window share can look like a whole-display share, so a chat behind it may still be warned about and minimized. Codex rejected item 2 over this limit only. Also untested: whether Teams' AX frames match CG bounds within 1 point (if not, minimizing is safely skipped every time).
 - [x] 3. Warnings before bounded Accessibility work: implemented, 69/69 regression checks passed, code review passed after one fix. Known limits: a cancel that lands just after the final "still wanted" check cannot stop that one AX write; if the share switches between displays while an attempt is still reading, with no gap where nothing is exposed, the earlier display's chat can still be minimized (small fix if wanted: cancel when targets change). Codex rejected item 3 over these two limits only. Untested live: warning drawing before the attempt, whether the 1 s AX timeout suits a busy Teams. Item 7 must describe the new "Not minimized: ..." menu line and tooltip.
 - [ ] 4. Real Teams share and display checks: not performed.
-- [ ] 5. Clear first-run permissions and safe warning preview: not started.
+- [x] 5. Clear first-run permissions and safe warning preview: implemented, 95/95 regression checks passed, code review and Codex accepted after three fixes. Minimizing is now opt-in when no choice was stored (old versions stored it only on a checkbox click). The test warning shows only while checks run and nothing is shared. Known limit: the test sound can overlap a real warning's sound within about 1 s. Tests keep their settings under the temp dir, not ~/Library/Preferences. Open for the item 4 call: first-launch Settings flow, the Allow button and prompt, the relaunch hint, the test banner on one and two screens and its refusals, the Accessibility prompt when minimizing is turned on, and the new Settings layout. Item 7 must refresh settings-permissions.png and describe the new Settings text.
 - [ ] 6. Reliable Start at Login: not started.
 - [ ] 7. Accurate existing documentation and warning screenshot: not started.
 - [ ] 8. A simple app icon: not started.
