@@ -8,6 +8,7 @@ Items 1, 2, 3, 5, 6, 6b, 7, 8, and 9 are committed on the `review-fixes` branch,
 The next implementation item is item 10; item 4 is the owner's live test.
 The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
 If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
+The owner-requested product page in `site/` is uncommitted for now; the owner chose Cloudflare Pages for publishing (wrangler is logged in), but only after the live test and a new release that includes these fixes, because the Download button points at releases/latest.
 
 Item 1 was done by the earlier Codex sessions: `plan-execution` implemented it and `code-review` reviewed it with no findings.
 
@@ -136,7 +137,7 @@ The script may use the existing local signing identity through Keychain; do not 
 - [x] 7. Accurate existing documentation: README, INSTALL, and BUILDING updated; code review and Codex accepted after one round of wording fixes. Open for the owner during the item 4 call: capture warning.png (Show Test Warning banner, dummy content) and refresh settings-general.png, settings-detection.png, and settings-permissions.png; then add a one-line image tag so the README leads with the warning.
 - [x] 8. A simple app icon: assets/Blindspot.icns from assets/make-icon.swift, added by build.sh before signing; code review and Codex accepted with no findings. Open for the item 4 call: how Finder, the Dock, and System Settings show it (they cache icons).
 - [x] 9. Smaller CI permissions and pinned actions: read-only builds, tag-only release job with write access, actions pinned to verified SHAs, macos-26 with Xcode 26.6, swift test in CI; code review and Codex accepted with no findings. Open: the release job runs only on a real v* tag, which needs owner approval.
-- [ ] 10. A personal Homebrew cask: not started.
+- [ ] 10. A personal Homebrew cask: deferred by the owner until after the live test and a new release that includes these fixes.
 
 For each item, record the pre-change diff, explain the smallest plan in the session, add a meaningful failing regression for logic changes, implement only that item, rerun relevant checks, and send the entire item change to `code-review`.
 HEAD will remain the same while changes are uncommitted, so use a temporary before/after snapshot or item patch to separate each item from earlier accepted work.
