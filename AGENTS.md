@@ -1,7 +1,5 @@
 # Blindspot agent instructions
 
-Read [charter.md](charter.md) before planning, editing, testing, or reviewing this project.
-Follow its scope, work order, verification requirements, and session roles.
 Read [plan.md](plan.md) for the handoff status, completed item, test commands, and remaining fixes.
 The owner's later instructions take precedence.
 

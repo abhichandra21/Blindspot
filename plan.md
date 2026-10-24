@@ -2,7 +2,7 @@
 
 ## Start here
 
-Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
+Read [AGENTS.md](AGENTS.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
 Items 1, 2, 3, 5, 6, 6b, 7, 8, and 9 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
 The next implementation item is item 10; item 4 is the owner's live test.
