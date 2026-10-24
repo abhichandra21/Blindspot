@@ -4,8 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1, 2, 3, and 5 are committed on the `review-fixes` branch, one commit each.
-The next implementation item is item 6; item 4 is the owner's live test.
+Items 1, 2, 3, 5, and 6 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
+The next implementation item is 6b, the Swift package split; item 4 is the owner's live test.
 The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
 If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
 
@@ -134,7 +134,8 @@ The script may use the existing local signing identity through Keychain; do not 
 - [x] 3. Warnings before bounded Accessibility work: implemented, 69/69 regression checks passed, code review passed after one fix. Known limits: a cancel that lands just after the final "still wanted" check cannot stop that one AX write; if the share switches between displays while an attempt is still reading, with no gap where nothing is exposed, the earlier display's chat can still be minimized (small fix if wanted: cancel when targets change). Codex rejected item 3 over these two limits only. Untested live: warning drawing before the attempt, whether the 1 s AX timeout suits a busy Teams. Item 7 must describe the new "Not minimized: ..." menu line and tooltip.
 - [ ] 4. Real Teams share and display checks: not performed.
 - [x] 5. Clear first-run permissions and safe warning preview: implemented, 95/95 regression checks passed, code review and Codex accepted after three fixes. Minimizing is now opt-in when no choice was stored (old versions stored it only on a checkbox click). The test warning shows only while checks run and nothing is shared. Known limit: the test sound can overlap a real warning's sound within about 1 s. Tests keep their settings under the temp dir, not ~/Library/Preferences. Open for the item 4 call: first-launch Settings flow, the Allow button and prompt, the relaunch hint, the test banner on one and two screens and its refusals, the Accessibility prompt when minimizing is turned on, and the new Settings layout. Item 7 must refresh settings-permissions.png and describe the new Settings text.
-- [ ] 6. Reliable Start at Login: not started.
+- [x] 6. Reliable Start at Login: implemented, 117/117 regression checks passed, code review accepted with no findings. Codex rejected over one limit. Known limits: if launchctl enable succeeds but the follow-up check fails, the box stays on with "Couldn't check Start at Login."; if a stale plist is repaired and then launchctl enable fails, the box shows off while the repaired plist may still start this copy at the next login (the next Settings open shows the truth). Item 4 caution: do not toggle Start at Login in a temporary test build, or the real login entry will point at it; turn it on again from the real copy afterwards. Open for the item 4 call: a real login after enabling, moving the app and re-enabling, real print-disabled output, and the login label in Settings.
+- [ ] 6b. Swift package layout (owner decision): move code from main.swift into a few files under `Sources/Blindspot/` (detection, minimizing, login item, settings, app entry), convert the tests to a `Tests/` target run with `swift test`, and keep `build.sh` producing the same signed `.app`. No behavior changes; all existing checks must still pass. Done before item 7 so the docs describe the final layout.
 - [ ] 7. Accurate existing documentation and warning screenshot: not started.
 - [ ] 8. A simple app icon: not started.
 - [ ] 9. Smaller CI permissions and pinned actions: not started.
@@ -307,6 +308,8 @@ Preserve the unrelated social-preview image.
    Verify availability before naming a version.
 6. Keep PR builds, main pushes, and tag versioning/release packaging working.
    Do not introduce signing secrets or an Apple account.
+
+7. After the item 6b split, add a `swift test` step so CI runs the regression checks.
 
 **Checks:** `actionlint`, `bash -n build.sh`, temporary local bundle build, plist/signature checks, and review of each event path and permissions block.
 Do not push a tag or trigger a release merely to test the workflow.

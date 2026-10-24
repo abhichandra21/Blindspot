@@ -315,6 +315,94 @@ struct StatusTests {
         check(previewPlacement(state: nil, windows: [chat], permission: true) == .unknown,
               "test warning is not shown before the first check")
 
+        let realAgents = LoginItem.agentsDirectory
+        let realExecutable = LoginItem.executablePath
+        let realLaunchctl = LoginItem.runLaunchctl
+        let loginRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("blindspot-login-tests-\(UUID().uuidString)")
+        let agents = loginRoot.appendingPathComponent("Launch Agents")
+        let appPath = "/Applications/My Apps/Blindspot.app/Contents/MacOS/Blindspot"
+        LoginItem.agentsDirectory = agents
+        LoginItem.executablePath = appPath
+        var launchctlCalls: [[String]] = []
+        var queryResult = LaunchctlResult(status: 0, output: "")
+        var changeStatus: Int32? = 0
+        LoginItem.runLaunchctl = { args in
+            launchctlCalls.append(args)
+            return args.first == "print-disabled" ? queryResult : LaunchctlResult(status: changeStatus, output: "")
+        }
+        let label = launchAgentLabel
+        func writeAgent(_ program: String) {
+            try? FileManager.default.createDirectory(at: agents, withIntermediateDirectories: true)
+            let plist: [String: Any] = ["Label": label, "ProgramArguments": [program], "RunAtLoad": true,
+                                        "KeepAlive": ["SuccessfulExit": false], "ProcessType": "Interactive"]
+            let data = try! PropertyListSerialization.data(fromPropertyList: plist, format: .xml, options: 0)
+            try! data.write(to: LoginItem.plistURL)
+        }
+        func readAgent() -> [String: Any]? {
+            guard let data = try? Data(contentsOf: LoginItem.plistURL) else { return nil }
+            return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        }
+
+        check(LoginItem.isEnabled == false && launchctlCalls.isEmpty, "no login item when the plist is absent")
+        writeAgent(appPath)
+        check(LoginItem.isEnabled == true, "a current login item with no disabled entry is enabled")
+        queryResult = LaunchctlResult(status: 0, output: "\t\"\(label)\" => disabled\n")
+        check(LoginItem.isEnabled == false, "a disabled entry is not enabled")
+        queryResult = LaunchctlResult(status: 0, output: "\t\"\(label)\" => true\n")
+        check(LoginItem.isEnabled == false, "the older disabled wording is not enabled")
+        queryResult = LaunchctlResult(status: 1, output: "")
+        check(LoginItem.isEnabled == nil, "a failed launchctl query is unknown, not enabled")
+        queryResult = LaunchctlResult(status: nil, output: "")
+        check(LoginItem.isEnabled == nil, "launchctl that cannot start is unknown, not enabled")
+        queryResult = LaunchctlResult(status: 0, output: "")
+
+        writeAgent("/Old Place/Blindspot.app/Contents/MacOS/Blindspot")
+        check(LoginItem.isEnabled == false && LoginItem.isStale, "a login item for an old copy is not enabled")
+        launchctlCalls = []
+        check(LoginItem.setEnabled(true) == nil, "enabling an old login item succeeds")
+        let repaired = readAgent()
+        check(repaired?["ProgramArguments"] as? [String] == [appPath],
+              "enabling repairs the path, with spaces kept in one argument")
+        check(repaired?["Label"] as? String == label && repaired?["RunAtLoad"] as? Bool == true
+              && (repaired?["KeepAlive"] as? [String: Bool]) == ["SuccessfulExit": false]
+              && repaired?["ProcessType"] as? String == "Interactive",
+              "repair keeps the label, RunAtLoad, KeepAlive and ProcessType")
+        check(launchctlCalls == [["enable", "\(LoginItem.domain)/\(label)"]],
+              "enabling runs only launchctl enable for this label")
+        check(!LoginItem.isStale && LoginItem.isEnabled == true, "a repaired login item is enabled")
+
+        let unrelated = agents.appendingPathComponent("com.example.other.plist")
+        try? Data("unrelated".utf8).write(to: unrelated)
+        launchctlCalls = []
+        changeStatus = 1
+        check(LoginItem.setEnabled(true) == "Couldn't turn on Start at Login.", "a failed enable is reported")
+        check(LoginItem.setEnabled(false) == "Couldn't turn off Start at Login.", "a failed disable is reported")
+        changeStatus = 0
+        let beforeDisable = try? Data(contentsOf: LoginItem.plistURL)
+        check(LoginItem.setEnabled(false) == nil, "a successful disable reports no problem")
+        check((try? Data(contentsOf: LoginItem.plistURL)) == beforeDisable, "disabling leaves the plist alone")
+        check((try? String(contentsOf: unrelated, encoding: .utf8)) == "unrelated", "unrelated login items are untouched")
+        check(launchctlCalls.allSatisfy { $0.last == "\(LoginItem.domain)/\(label)" },
+              "launchctl changes only ever name this label")
+
+        try? FileManager.default.removeItem(at: LoginItem.plistURL)
+        launchctlCalls = []
+        check(LoginItem.setEnabled(true) == nil && readAgent()?["ProgramArguments"] as? [String] == [appPath],
+              "enabling with no plist writes one")
+        check(launchctlCalls.count == 1, "enabling with no plist then runs enable")
+
+        try? FileManager.default.removeItem(at: agents)
+        try? Data().write(to: agents)
+        launchctlCalls = []
+        check(LoginItem.setEnabled(true) == "Couldn't save the login item.", "a failed write is reported")
+        check(launchctlCalls.isEmpty, "a failed write does not run launchctl")
+
+        try? FileManager.default.removeItem(at: loginRoot)
+        LoginItem.agentsDirectory = realAgents
+        LoginItem.executablePath = realExecutable
+        LoginItem.runLaunchctl = realLaunchctl
+
         print("\(checks - failures)/\(checks) checks passed")
         if failures > 0 { exit(1) }
     }
