@@ -70,7 +70,8 @@ To help keep permissions across updates, [build it yourself](BUILDING.md) with a
 ## Uninstall
 
 With Homebrew, quit Blindspot and run `brew uninstall --cask blindspot`; `brew uninstall --zap --cask blindspot` also removes its settings and login item.
-Without --zap, also do steps 3 and 4 below.
+Without --zap, also do step 3 below.
+With or without --zap, step 4 removes the permission entries.
 
 Without Homebrew:
 
