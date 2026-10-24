@@ -93,13 +93,13 @@ struct StatusTests {
         checkText(detect([], paused: true), "Paused", "pause status wording is preserved")
         checkText(detect([indicator, chat]), "Teams Chat may be visible in your share",
                   "warning status wording is preserved")
-        check(detect([indicator, chat]) == .chatExposed([chat], display),
+        check(detect([indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
               "partial display exposure remains a warning")
         let coveringWindow = window("Synthetic cover", display, owner: "Other App")
-        check(detect([coveringWindow, indicator, chat]) == .chatExposed([chat], display),
+        check(detect([coveringWindow, indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
               "a watched window behind another app still counts")
         let activity = window("Activity | Synthetic", chat.bounds)
-        check(detect([indicator, activity], tabs: ["Activity"]) == .chatExposed([activity], display),
+        check(detect([indicator, activity], tabs: ["Activity"]) == .chatExposed([activity], display, wholeDisplay: true),
               "selected Activity tab remains watched")
         check(detect([indicator, chat], tabs: ["Activity"]) == .sharingClear,
               "unselected Chat tab does not trigger exposure")
@@ -117,10 +117,57 @@ struct StatusTests {
         let windowIndicator = window(sharingIndicatorTitle, sharedWindow)
         let halfOverlap = window("Chat | Synthetic", CGRect(x: 300, y: 100, width: 400, height: 400))
         let lessOverlap = window("Chat | Synthetic", CGRect(x: 301, y: 100, width: 400, height: 400))
-        check(detect([windowIndicator, halfOverlap]) == .chatExposed([halfOverlap], sharedWindow),
+        check(detect([windowIndicator, halfOverlap]) == .chatExposed([halfOverlap], sharedWindow, wholeDisplay: false),
               "existing window-share 50 percent threshold is preserved")
         check(detect([windowIndicator, lessOverlap]) == .sharingClear,
               "existing window-share below-threshold result is preserved")
+
+        check(detect([indicator, chat]).autoMinimizeTargets == [chat],
+              "display share with partial Chat overlap may be minimized")
+        let secondDisplay = CGRect(x: 1200, y: 0, width: 1200, height: 800)
+        let chatOnSecond = window("Chat | Synthetic", CGRect(x: 1400, y: 100, width: 300, height: 300))
+        check(detect([indicator, chatOnSecond], displays: [display, secondDisplay]) == .sharingClear,
+              "Chat on another display does not warn")
+        let presentation = CGRect(x: 100, y: 100, width: 600, height: 400)
+        let presentationIndicator = window(sharingIndicatorTitle, presentation)
+        let chatBehind = window("Chat | Synthetic", presentation)
+        let windowShare = detect([presentationIndicator, chatBehind])
+        check(windowShare == .chatExposed([chatBehind], presentation, wholeDisplay: false),
+              "Chat behind a shared presentation window still warns")
+        check(windowShare.autoMinimizeTargets.isEmpty,
+              "window share is not automatically minimized")
+        check(GuardState.sharingClear.autoMinimizeTargets.isEmpty, "clear share has nothing to minimize")
+
+        let target = window("Chat | Synthetic", CGRect(x: 100, y: 100, width: 300, height: 300))
+        let elsewhere = CGRect(x: 500, y: 100, width: 300, height: 300)
+        func candidate(_ title: String?, _ frame: CGRect?) -> AXWindowCandidate {
+            AXWindowCandidate(title: title, frame: frame)
+        }
+        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere),
+                                         candidate("Chat | Synthetic", target.bounds)]) == .match(1),
+              "same-title AX windows are told apart by position")
+        let rounded = target.bounds.offsetBy(dx: 0.5, dy: -0.5)
+        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", rounded)]) == .match(0),
+              "sub-point rounding still matches")
+        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", target.bounds),
+                                         candidate("Chat | Synthetic", target.bounds)]) == .ambiguous,
+              "two indistinguishable AX windows are ambiguous")
+        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere)]) == .stale,
+              "a moved window is stale")
+        check(matchAXWindow(target, in: [candidate("Calendar | Synthetic", target.bounds)]) == .stale,
+              "a retitled window is stale")
+        check(matchAXWindow(target, in: [candidate(nil, target.bounds)]) == .unreadable,
+              "an unreadable title is not guessed")
+        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", nil)]) == .unreadable,
+              "an unreadable frame is not guessed")
+        check(matchAXWindow(target, in: [candidate("Calendar | Synthetic", nil),
+                                         candidate("Chat | Synthetic", target.bounds)]) == .match(1),
+              "an unreadable frame on another title does not block a clear match")
+        check(matchAXWindow(target, in: [candidate(nil, elsewhere),
+                                         candidate("Chat | Synthetic", target.bounds)]) == .match(1),
+              "an untitled window elsewhere does not block a clear match")
+        check(matchAXWindow(target, in: [candidate(nil, nil)]) == .unreadable,
+              "an untitled window with no frame is not guessed")
 
         print("\(checks - failures)/\(checks) checks passed")
         if failures > 0 { exit(1) }

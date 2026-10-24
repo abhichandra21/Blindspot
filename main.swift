@@ -124,7 +124,15 @@ enum GuardState: Equatable {
     case sharingClear
     // The exposed Teams windows and the shared area, so the banner can avoid
     // the shared screen and the windows can be minimized.
-    case chatExposed([WindowInfo], CGRect)
+    case chatExposed([WindowInfo], CGRect, wholeDisplay: Bool)
+
+    // Only a whole-display share is clear enough to act on. A window share
+    // keeps the warning, since overlap alone does not prove the chat is the
+    // shared window.
+    var autoMinimizeTargets: [WindowInfo] {
+        if case .chatExposed(let windows, _, wholeDisplay: true) = self { return windows }
+        return []
+    }
 
     var statusText: String {
         switch self {
@@ -134,7 +142,7 @@ enum GuardState: Equatable {
         case .observationFailed: return "Unable to check Teams sharing"
         case .notSharing: return "No Teams share detected"
         case .sharingClear: return "Sharing; no watched Teams windows detected in the shared area"
-        case .chatExposed(let windows, _):
+        case .chatExposed(let windows, _, _):
             return "Teams \(tabName(windows[0])) may be visible in your share"
         }
     }
@@ -201,32 +209,116 @@ func currentState(paused: Bool = false, riskyTabs: [String] = Prefs.riskyTabs,
         let sharedArea = shared.width * shared.height
         return wholeDisplay || overlapArea >= sharedArea * 0.5
     }
-    return exposed.isEmpty ? .sharingClear : .chatExposed(exposed, shared)
+    return exposed.isEmpty ? .sharingClear : .chatExposed(exposed, shared, wholeDisplay: wholeDisplay)
 }
 
 func tabName(_ w: WindowInfo) -> String {
     w.title.components(separatedBy: " |").first ?? w.title
 }
 
+// Window list and Accessibility frames are both in global top-left points;
+// this only absorbs rounding, not a moved or resized window.
+let axFrameMatchSlackPoints: CGFloat = 1
+
+// An Accessibility window as read for matching; nil where an attribute could not be read.
+struct AXWindowCandidate {
+    let title: String?
+    let frame: CGRect?
+}
+
+enum AXWindowMatch: Equatable {
+    case match(Int)
+    case ambiguous
+    case stale
+    case unreadable
+}
+
+enum MinimizeOutcome: Equatable {
+    case minimized
+    case skippedAmbiguous
+    case skippedStale
+    case skippedUnreadable
+    case failed(AXError)
+}
+
+// Acts only on one window with the observed title and frame. A duplicate,
+// a changed window, or one that cannot be read is left alone.
+func matchAXWindow(_ target: WindowInfo, in candidates: [AXWindowCandidate]) -> AXWindowMatch {
+    func frameMatches(_ frame: CGRect) -> Bool {
+        abs(frame.minX - target.bounds.minX) <= axFrameMatchSlackPoints
+            && abs(frame.minY - target.bounds.minY) <= axFrameMatchSlackPoints
+            && abs(frame.width - target.bounds.width) <= axFrameMatchSlackPoints
+            && abs(frame.height - target.bounds.height) <= axFrameMatchSlackPoints
+    }
+    // A candidate is ruled out by any readable attribute that differs.
+    let possible = candidates.indices.filter { i in
+        let c = candidates[i]
+        return (c.title == nil || c.title == target.title) && (c.frame.map(frameMatches) ?? true)
+    }
+    if possible.contains(where: { candidates[$0].title == nil || candidates[$0].frame == nil }) {
+        return .unreadable
+    }
+    switch possible.count {
+    case 0: return .stale
+    case 1: return .match(possible[0])
+    default: return .ambiguous
+    }
+}
+
+func axCandidate(_ window: AXUIElement) -> AXWindowCandidate {
+    func copy(_ attribute: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(window, attribute as CFString, &value) == .success else { return nil }
+        return value
+    }
+    func axValue(_ attribute: String) -> AXValue? {
+        guard let value = copy(attribute), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
+        return (value as! AXValue)
+    }
+    var position = CGPoint.zero
+    var size = CGSize.zero
+    var frame: CGRect?
+    if let positionValue = axValue(kAXPositionAttribute), AXValueGetValue(positionValue, .cgPoint, &position),
+       let sizeValue = axValue(kAXSizeAttribute), AXValueGetValue(sizeValue, .cgSize, &size) {
+        frame = CGRect(origin: position, size: size)
+    }
+    return AXWindowCandidate(title: copy(kAXTitleAttribute) as? String, frame: frame)
+}
+
 // Minimizes Teams windows through the Accessibility API, matching the window
-// list entries to accessibility windows by title. Needs Accessibility permission.
-func minimize(_ windows: [WindowInfo]) {
+// list entries to accessibility windows by title and frame. Needs Accessibility permission.
+@discardableResult
+func minimize(_ windows: [WindowInfo]) -> [MinimizeOutcome] {
+    var outcomes: [MinimizeOutcome] = []
     for (pid, group) in Dictionary(grouping: windows, by: \.pid) {
         let app = AXUIElementCreateApplication(pid)
         var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value) == .success,
-              let axWindows = value as? [AXUIElement] else { continue }
-        let titles = Set(group.map(\.title))
-        for axWindow in axWindows {
-            var titleValue: CFTypeRef?
-            AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
-            guard let title = titleValue as? String, titles.contains(title) else { continue }
-            let result = AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanTrue)
-            if result != .success {
-                NSLog("Failed to minimize Teams window: AX error \(result.rawValue)")
+        let readResult = AXUIElementCopyAttributeValue(app, kAXWindowsAttribute as CFString, &value)
+        guard readResult == .success, let axWindows = value as? [AXUIElement] else {
+            let error = readResult == .success ? AXError.failure : readResult
+            NSLog("Failed to read Teams windows: AX error \(error.rawValue)")
+            outcomes += group.map { _ in .failed(error) }
+            continue
+        }
+        let candidates = axWindows.map(axCandidate)
+        for target in group {
+            switch matchAXWindow(target, in: candidates) {
+            case .match(let index):
+                let result = AXUIElementSetAttributeValue(axWindows[index], kAXMinimizedAttribute as CFString,
+                                                          kCFBooleanTrue)
+                if result == .success {
+                    outcomes.append(.minimized)
+                } else {
+                    NSLog("Failed to minimize Teams window: AX error \(result.rawValue)")
+                    outcomes.append(.failed(result))
+                }
+            case .ambiguous: outcomes.append(.skippedAmbiguous)
+            case .stale: outcomes.append(.skippedStale)
+            case .unreadable: outcomes.append(.skippedUnreadable)
             }
         }
     }
+    return outcomes
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -276,8 +368,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let newState = currentState(paused: paused)
         settings.refreshPermission()
         // Retry every tick while exposed, so it still works once permission is granted.
-        if case .chatExposed(let windows, _) = newState, Prefs.autoMinimize, AXIsProcessTrusted() {
-            minimize(windows)
+        let targets = newState.autoMinimizeTargets
+        if !targets.isEmpty, Prefs.autoMinimize, AXIsProcessTrusted() {
+            minimize(targets)
         }
         guard newState != state else { return }
         let wasExposed = { if case .chatExposed = self.state { return true } else { return false } }()
@@ -302,7 +395,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .sharingClear:
             show(symbol: "checkmark.shield.fill", text: newState.statusText)
             hideWarning()
-        case .chatExposed(let windows, let shared):
+        case .chatExposed(let windows, let shared, _):
             let tab = tabName(windows[0])
             // Overlap is by window bounds, so a chat hidden behind another
             // window still counts. Hence "may be".
