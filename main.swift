@@ -117,18 +117,33 @@ struct WindowInfo: Equatable {
 
 enum GuardState: Equatable {
     case paused
+    case checksDisabled
     case noPermission
+    case observationFailed
     case notSharing
     case sharingClear
     // The exposed Teams windows and the shared area, so the banner can avoid
     // the shared screen and the windows can be minimized.
     case chatExposed([WindowInfo], CGRect)
+
+    var statusText: String {
+        switch self {
+        case .paused: return "Paused"
+        case .checksDisabled: return "Checks disabled: no Teams tabs selected"
+        case .noPermission: return "Needs Screen Recording permission"
+        case .observationFailed: return "Unable to check Teams sharing"
+        case .notSharing: return "No Teams share detected"
+        case .sharingClear: return "Sharing; no watched Teams windows detected in the shared area"
+        case .chatExposed(let windows, _):
+            return "Teams \(tabName(windows[0])) may be visible in your share"
+        }
+    }
 }
 
-func onScreenWindows() -> [WindowInfo] {
+func onScreenWindows() -> [WindowInfo]? {
     let opts: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
     guard let list = CGWindowListCopyWindowInfo(opts, kCGNullWindowID) as? [[String: Any]] else {
-        return []
+        return nil
     }
     return list.compactMap { w in
         guard let boundsDict = w[kCGWindowBounds as String] as? NSDictionary,
@@ -142,16 +157,16 @@ func onScreenWindows() -> [WindowInfo] {
     }
 }
 
-func displayBounds() -> [CGRect] {
+func displayBounds() -> [CGRect]? {
     var count: UInt32 = 0
-    CGGetActiveDisplayList(0, nil, &count)
+    guard CGGetActiveDisplayList(0, nil, &count) == .success else { return nil }
     var ids = [CGDirectDisplayID](repeating: 0, count: Int(count))
-    CGGetActiveDisplayList(count, &ids, &count)
-    return ids.map { CGDisplayBounds($0) }
+    guard CGGetActiveDisplayList(count, &ids, &count) == .success else { return nil }
+    return ids.prefix(Int(count)).map { CGDisplayBounds($0) }
 }
 
-func isWholeDisplay(_ rect: CGRect) -> Bool {
-    displayBounds().contains { d in
+func isWholeDisplay(_ rect: CGRect, displays: [CGRect]) -> Bool {
+    displays.contains { d in
         abs(d.minX - rect.minX) < displayMatchSlackPoints
             && abs(d.minY - rect.minY) < displayMatchSlackPoints
             && abs(d.width - rect.width) < displayMatchSlackPoints * 2
@@ -159,15 +174,21 @@ func isWholeDisplay(_ rect: CGRect) -> Bool {
     }
 }
 
-func currentState() -> GuardState {
-    guard CGPreflightScreenCaptureAccess() else { return .noPermission }
-    let windows = onScreenWindows().filter { $0.owner.hasPrefix(teamsOwnerPrefix) }
+func currentState(paused: Bool = false, riskyTabs: [String] = Prefs.riskyTabs,
+                  hasPermission: () -> Bool = { CGPreflightScreenCaptureAccess() },
+                  readWindows: () -> [WindowInfo]? = onScreenWindows,
+                  readDisplays: () -> [CGRect]? = displayBounds) -> GuardState {
+    if paused { return .paused }
+    guard !riskyTabs.isEmpty else { return .checksDisabled }
+    guard hasPermission() else { return .noPermission }
+    guard let observedWindows = readWindows() else { return .observationFailed }
+    let windows = observedWindows.filter { $0.owner.hasPrefix(teamsOwnerPrefix) }
     guard let indicator = windows.first(where: { $0.title == sharingIndicatorTitle }) else {
         return .notSharing
     }
     let shared = indicator.bounds
-    let wholeDisplay = isWholeDisplay(shared)
-    let riskyTabs = Prefs.riskyTabs
+    guard let displays = readDisplays() else { return .observationFailed }
+    let wholeDisplay = isWholeDisplay(shared, displays: displays)
     let risky = windows.filter { w in
         w.layer == 0 && riskyTabs.contains { w.title.hasPrefix($0) }
     }
@@ -252,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func refresh() {
-        let newState = paused ? .paused : currentState()
+        let newState = currentState(paused: paused)
         settings.refreshPermission()
         // Retry every tick while exposed, so it still works once permission is granted.
         if case .chatExposed(let windows, _) = newState, Prefs.autoMinimize, AXIsProcessTrusted() {
@@ -264,30 +285,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch newState {
         case .paused:
-            show(symbol: "shield", text: "Paused")
+            show(symbol: "shield", text: newState.statusText)
+            hideWarning()
+        case .checksDisabled:
+            show(symbol: "shield", text: newState.statusText)
             hideWarning()
         case .noPermission:
-            show(symbol: "lock.shield.fill", text: "Needs Screen Recording permission")
+            show(symbol: "lock.shield.fill", text: newState.statusText)
+            hideWarning()
+        case .observationFailed:
+            show(symbol: "exclamationmark.shield.fill", text: newState.statusText, tint: .systemOrange)
             hideWarning()
         case .notSharing:
-            show(symbol: "shield.fill", text: "Not sharing")
+            show(symbol: "shield.fill", text: newState.statusText)
             hideWarning()
         case .sharingClear:
-            show(symbol: "checkmark.shield.fill", text: "Sharing, no Teams chat visible")
+            show(symbol: "checkmark.shield.fill", text: newState.statusText)
             hideWarning()
         case .chatExposed(let windows, let shared):
             let tab = tabName(windows[0])
             // Overlap is by window bounds, so a chat hidden behind another
             // window still counts. Hence "may be".
-            show(symbol: "exclamationmark.shield.fill", text: "Teams \(tab) may be visible in your share",
+            show(symbol: "exclamationmark.shield.fill", text: newState.statusText,
                  tint: .systemRed)
             if !wasExposed && Prefs.playSound { NSSound(named: "Funk")?.play() }
             showWarning("Teams \(tab) may be visible in your screen share", avoiding: shared)
         }
     }
 
-    // Like a full or empty cup: filled shield while running, outline while
-    // paused. Warning is red.
+    // Like a full or empty cup: filled shield while checking, outline while
+    // paused or disabled. Warning is red.
     private func show(symbol: String, text: String, tint: NSColor? = nil) {
         var image = NSImage(systemSymbolName: symbol, accessibilityDescription: text)
         if let tint {
@@ -637,6 +664,9 @@ final class PermissionRow: NSObject {
     }
 }
 
+#if BLINDSPOT_TESTING
+StatusTests.main()
+#else
 // `--once` prints the current state and exits, for testing from a terminal.
 if CommandLine.arguments.contains("--once") {
     print(currentState())
@@ -656,3 +686,4 @@ let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.accessory)
 app.run()
+#endif
