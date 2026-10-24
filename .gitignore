@@ -4,3 +4,15 @@ Blindspot.app/
 .DS_Store
 # Swift package build output
 .build/
+
+# wrangler files
+.wrangler
+.dev.vars*
+!.dev.vars.example
+.env*
+!.env.example
+
+# Local-only files: product site, its Cloudflare config, and the fix charter
+site/
+wrangler.jsonc
+charter.md

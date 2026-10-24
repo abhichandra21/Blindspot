@@ -17,6 +17,7 @@ Blindspot checks about once a second, so it notices within a second or so, then:
 
 ## Get it
 
+- **Homebrew:** `brew install --cask abhichandra21/tap/blindspot`, then follow [Install](docs/INSTALL.md) from step 2.
 - **Download:** grab `Blindspot.zip` from [Releases](../../releases), then follow [Install](docs/INSTALL.md).
   macOS blocks the first launch because the app is not signed by Apple; the guide covers the one-time fix.
 - **Build it yourself:** see [Building](docs/BUILDING.md).
@@ -81,4 +82,7 @@ The warning stays in place in every case.
 - It relies on how the new Teams names its windows ("Chat | ..." and "Activity | ..." in English), not a documented API, so a Teams update or another language could break detection.
 - Teams notification pop-ups are separate from the Chat and Activity windows and are not detected.
   Teams can turn them off while you share: see [Change your status in Microsoft Teams](https://support.microsoft.com/en-us/teams/notifications-settings/change-your-status-in-microsoft-teams) for **Set my status to Do not disturb when I'm sharing my screen**.
-- Sharing a single window, and automatic minimizing, have not been tested on a real call yet.
+
+## License
+
+[MIT](LICENSE).

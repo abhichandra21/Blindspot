@@ -2,6 +2,9 @@
 
 ## 1. Download and move it
 
+With Homebrew, run `brew install --cask abhichandra21/tap/blindspot` and skip to step 2.
+Otherwise:
+
 1. Download `Blindspot.zip` from the [latest release](../../../releases/latest) and double-click it to unzip.
 2. Drag `Blindspot.app` into your **Applications** folder.
 
@@ -53,6 +56,9 @@ If turning it on or off fails, the checkbox goes back to what it was and a short
 
 ## Updating
 
+With Homebrew: quit Blindspot, run `brew upgrade --cask blindspot`, then repeat step 2.
+
+Without Homebrew:
 Right-click the shield and choose **Quit Blindspot**; a second copy would close itself while the old one is running.
 Then download the new release and replace the app in Applications.
 Repeat step 2.
@@ -62,6 +68,11 @@ macOS ties permissions to each build's signature, so it may ask for them again; 
 To help keep permissions across updates, [build it yourself](BUILDING.md) with a local signing certificate.
 
 ## Uninstall
+
+With Homebrew, quit Blindspot and run `brew uninstall --cask blindspot`; `brew uninstall --zap --cask blindspot` also removes its settings and login item.
+Without --zap, also do steps 3 and 4 below.
+
+Without Homebrew:
 
 1. Right-click the shield and choose **Quit Blindspot**.
 2. Delete `Blindspot.app`.
