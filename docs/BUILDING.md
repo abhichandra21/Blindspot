@@ -18,6 +18,7 @@ open Blindspot.app
 The code is split by job: `Detection.swift`, `Minimizing.swift`, `LoginItem.swift`, `Settings.swift`, and `main.swift` for the menu bar app itself.
 `Package.swift` describes the same files as a Swift package, so the tests in `Tests/BlindspotTests` run with `swift test`.
 Running the tests needs full Xcode, not just the Command Line Tools.
+The app icon is `assets/Blindspot.icns`; to change it, edit and run `swift assets/make-icon.swift` from the repository root.
 Then grant permissions and set up login as in [Install](INSTALL.md), steps 3 and 4.
 
 After rebuilding, restart the running copy: right-click the shield, choose **Quit Blindspot**, and open the app again.

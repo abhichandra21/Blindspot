@@ -4,8 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1, 2, 3, 5, 6, 6b, and 7 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
-The next implementation item is item 8; item 4 is the owner's live test.
+Items 1, 2, 3, 5, 6, 6b, 7, and 8 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
+The next implementation item is item 9; item 4 is the owner's live test.
 The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
 If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
 
@@ -134,7 +134,7 @@ The script may use the existing local signing identity through Keychain; do not 
 - [x] 6. Reliable Start at Login: implemented, 117/117 regression checks passed, code review accepted with no findings. Codex rejected over one limit. Known limits: if launchctl enable succeeds but the follow-up check fails, the box stays on with "Couldn't check Start at Login."; if a stale plist is repaired and then launchctl enable fails, the box shows off while the repaired plist may still start this copy at the next login (the next Settings open shows the truth). Item 4 caution: do not toggle Start at Login in a temporary test build, or the real login entry will point at it; turn it on again from the real copy afterwards. Open for the item 4 call: a real login after enabling, moving the app and re-enabling, real print-disabled output, and the login label in Settings.
 - [x] 6b. Swift package layout (owner decision), done: code review and Codex accepted after one fix (build.sh keeps compiling with swiftc so the app records the real SDK). Originally planned as: move code from main.swift into a few files under `Sources/Blindspot/` (detection, minimizing, login item, settings, app entry), convert the tests to a `Tests/` target run with `swift test`, and keep `build.sh` producing the same signed `.app`. No behavior changes; all existing checks must still pass. Done before item 7 so the docs describe the final layout.
 - [x] 7. Accurate existing documentation: README, INSTALL, and BUILDING updated; code review and Codex accepted after one round of wording fixes. Open for the owner during the item 4 call: capture warning.png (Show Test Warning banner, dummy content) and refresh settings-general.png, settings-detection.png, and settings-permissions.png; then add a one-line image tag so the README leads with the warning.
-- [ ] 8. A simple app icon: not started.
+- [x] 8. A simple app icon: assets/Blindspot.icns from assets/make-icon.swift, added by build.sh before signing; code review and Codex accepted with no findings. Open for the item 4 call: how Finder, the Dock, and System Settings show it (they cache icons).
 - [ ] 9. Smaller CI permissions and pinned actions: not started.
 - [ ] 10. A personal Homebrew cask: not started.
 
