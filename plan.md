@@ -4,8 +4,8 @@
 
 Read [AGENTS.md](AGENTS.md) and [charter.md](charter.md) first.
 Since item 2, the Claude sessions `fix-coordinator`, `code-writer`, and `code-reviewer` replace the Codex sessions named below; `code-reviewer` also gets a Codex review of each item.
-Items 1, 2, 3, 5, and 6 are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
-The next implementation item is 6b, the Swift package split; item 4 is the owner's live test.
+Items 1, 2, 3, 5, 6, and 6b are committed on the `review-fixes` branch, one commit each, and pushed to draft PR https://github.com/abhichandra21/Blindspot/pull/1.
+The next implementation item is item 7; item 4 is the owner's live test.
 The owner will run the item 4 live Teams call once, after all other items, covering every fix together.
 If a fix or check needs a live call, record it under item 4 and move on; do not block other items on it.
 
@@ -95,26 +95,23 @@ Current source anchors:
 
 Run from the repository root.
 These commands write build output outside the repository and do not launch the app.
-The single test file compiles together with production code; it does not carry a copied detector implementation.
+The tests in `Tests/BlindspotTests` import the production `Blindspot` target with `@testable import`; they do not carry a copied detector implementation.
+Running the tests needs full Xcode for XCTest.
 
 ```bash
 set -euo pipefail
 blindspot_check_dir=$(mktemp -d /tmp/blindspot-check.XXXXXX)
-swiftc -D BLINDSPOT_TESTING \
-  -target arm64-apple-macos13.0 \
-  -module-cache-path "$blindspot_check_dir/module-cache" \
-  main.swift tests/StatusTests.swift \
-  -o "$blindspot_check_dir/status-tests"
-"$blindspot_check_dir/status-tests"
-swiftc -O \
-  -target arm64-apple-macos13.0 \
-  -module-cache-path "$blindspot_check_dir/module-cache" \
-  main.swift -o "$blindspot_check_dir/Blindspot"
+swift test --scratch-path "$blindspot_check_dir/build"
+# Same compile as build.sh, so the SDK stamp matches the shipped app.
+swiftc -O -target arm64-apple-macos13.0 -module-cache-path "$blindspot_check_dir/module-cache" Sources/Blindspot/*.swift -o "$blindspot_check_dir/Blindspot"
 xcrun vtool -show-build "$blindspot_check_dir/Blindspot"
 git diff --check
 ```
 
-Expected current result: 30/30 checks pass, production compilation succeeds, and the binary reports `minos 13.0`.
+Expected current result since item 6b: 12 XCTest methods with 117 assertions pass, the release build succeeds, and the binary reports `minos 13.0` with `sdk` equal to `xcrun --show-sdk-version`.
+The results below for item 1 refer to the earlier single-file commands.
+
+Expected result for item 1: 30/30 checks pass, production compilation succeeds, and the binary reports `minos 13.0`.
 That minimum-target check is not a runtime test on macOS 13.
 
 The implementer demonstrated 11 failures among the same 30 checks before the behavior fix, then 30/30 afterward.
@@ -135,7 +132,7 @@ The script may use the existing local signing identity through Keychain; do not 
 - [ ] 4. Real Teams share and display checks: not performed.
 - [x] 5. Clear first-run permissions and safe warning preview: implemented, 95/95 regression checks passed, code review and Codex accepted after three fixes. Minimizing is now opt-in when no choice was stored (old versions stored it only on a checkbox click). The test warning shows only while checks run and nothing is shared. Known limit: the test sound can overlap a real warning's sound within about 1 s. Tests keep their settings under the temp dir, not ~/Library/Preferences. Open for the item 4 call: first-launch Settings flow, the Allow button and prompt, the relaunch hint, the test banner on one and two screens and its refusals, the Accessibility prompt when minimizing is turned on, and the new Settings layout. Item 7 must refresh settings-permissions.png and describe the new Settings text.
 - [x] 6. Reliable Start at Login: implemented, 117/117 regression checks passed, code review accepted with no findings. Codex rejected over one limit. Known limits: if launchctl enable succeeds but the follow-up check fails, the box stays on with "Couldn't check Start at Login."; if a stale plist is repaired and then launchctl enable fails, the box shows off while the repaired plist may still start this copy at the next login (the next Settings open shows the truth). Item 4 caution: do not toggle Start at Login in a temporary test build, or the real login entry will point at it; turn it on again from the real copy afterwards. Open for the item 4 call: a real login after enabling, moving the app and re-enabling, real print-disabled output, and the login label in Settings.
-- [ ] 6b. Swift package layout (owner decision): move code from main.swift into a few files under `Sources/Blindspot/` (detection, minimizing, login item, settings, app entry), convert the tests to a `Tests/` target run with `swift test`, and keep `build.sh` producing the same signed `.app`. No behavior changes; all existing checks must still pass. Done before item 7 so the docs describe the final layout.
+- [x] 6b. Swift package layout (owner decision), done: code review and Codex accepted after one fix (build.sh keeps compiling with swiftc so the app records the real SDK). Originally planned as: move code from main.swift into a few files under `Sources/Blindspot/` (detection, minimizing, login item, settings, app entry), convert the tests to a `Tests/` target run with `swift test`, and keep `build.sh` producing the same signed `.app`. No behavior changes; all existing checks must still pass. Done before item 7 so the docs describe the final layout.
 - [ ] 7. Accurate existing documentation and warning screenshot: not started.
 - [ ] 8. A simple app icon: not started.
 - [ ] 9. Smaller CI permissions and pinned actions: not started.

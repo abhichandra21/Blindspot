@@ -1,45 +1,42 @@
 import CoreGraphics
 import Foundation
+import XCTest
+@testable import Blindspot
 
-struct StatusTests {
-    static func main() {
-        var checks = 0
-        var failures = 0
+final class StatusTests: XCTestCase {
+    func checkText(_ state: GuardState, _ expected: String, _ name: String) {
+        XCTAssertEqual(state.statusText, expected, name)
+    }
 
-        func check(_ condition: Bool, _ name: String) {
-            checks += 1
-            if condition {
-                print("PASS: \(name)")
-            } else {
-                failures += 1
-                print("FAIL: \(name)")
-            }
-        }
+    func window(_ title: String, _ bounds: CGRect, owner: String = teamsOwnerPrefix,
+                layer: Int = 0) -> WindowInfo {
+        WindowInfo(owner: owner, pid: 123, title: title, layer: layer, bounds: bounds)
+    }
 
-        func checkText(_ state: GuardState, _ expected: String, _ name: String) {
-            check(state.statusText == expected, "\(name): expected '\(expected)', got '\(state.statusText)'")
-        }
+    let display = CGRect(x: 0, y: 0, width: 1200, height: 800)
+    lazy var indicator = window(sharingIndicatorTitle, display)
+    lazy var chat = window("Chat | Synthetic", CGRect(x: 1100, y: 100, width: 300, height: 300))
+    lazy var outside = window("Chat | Synthetic", CGRect(x: 1400, y: 100, width: 300, height: 300))
+    let clearText = "Sharing; no watched Teams windows detected in the shared area"
+    let disabledText = "Checks disabled: no Teams tabs selected"
+    let failureText = "Unable to check Teams sharing"
 
-        func window(_ title: String, _ bounds: CGRect, owner: String = teamsOwnerPrefix,
-                    layer: Int = 0) -> WindowInfo {
-            WindowInfo(owner: owner, pid: 123, title: title, layer: layer, bounds: bounds)
-        }
+    func detect(_ windows: [WindowInfo]?, tabs: [String] = allRiskyTabs,
+                permission: Bool = true, paused: Bool = false,
+                displays: [CGRect]? = nil) -> GuardState {
+        currentState(paused: paused, riskyTabs: tabs, hasPermission: { permission },
+                     readWindows: { windows }, readDisplays: { displays ?? [display] })
+    }
 
-        let display = CGRect(x: 0, y: 0, width: 1200, height: 800)
-        let indicator = window(sharingIndicatorTitle, display)
-        let chat = window("Chat | Synthetic", CGRect(x: 1100, y: 100, width: 300, height: 300))
-        let outside = window("Chat | Synthetic", CGRect(x: 1400, y: 100, width: 300, height: 300))
-        let clearText = "Sharing; no watched Teams windows detected in the shared area"
-        let disabledText = "Checks disabled: no Teams tabs selected"
-        let failureText = "Unable to check Teams sharing"
+    // Used by several sections; built exactly as in their first section.
+    var otherIndicator: WindowInfo { window(sharingIndicatorTitle, display, owner: "Other App") }
+    var displayShare: GuardState { detect([indicator, chat]) }
+    var windowShare: GuardState {
+        let presentation = CGRect(x: 100, y: 100, width: 600, height: 400)
+        return detect([window(sharingIndicatorTitle, presentation), window("Chat | Synthetic", presentation)])
+    }
 
-        func detect(_ windows: [WindowInfo]?, tabs: [String] = allRiskyTabs,
-                    permission: Bool = true, paused: Bool = false,
-                    displays: [CGRect]? = nil) -> GuardState {
-            currentState(paused: paused, riskyTabs: tabs, hasPermission: { permission },
-                         readWindows: { windows }, readDisplays: { displays ?? [display] })
-        }
-
+    func testStatuses() {
         checkText(detect([indicator, chat], tabs: []), disabledText,
                   "no selected tabs must not report a clear share")
         checkText(detect(nil), failureText, "failed window observation must not report no share")
@@ -47,7 +44,9 @@ struct StatusTests {
         checkText(detect([chat]), "No Teams share detected", "no matching share indicator")
         checkText(detect([indicator, outside]), clearText, "watched window outside the shared area")
         checkText(detect([indicator]), clearText, "share without a watched window")
+    }
 
+    func testObservationOrder() {
         var permissionReads = 0
         var windowReads = 0
         var displayReads = 0
@@ -65,123 +64,131 @@ struct StatusTests {
             })
         }
 
-        check(observed(paused: true, tabs: [], permission: false) == .paused,
+        XCTAssertTrue(observed(paused: true, tabs: [], permission: false) == .paused,
               "pause takes precedence over disabled checks, permission and failed observation")
-        check(permissionReads == 0 && windowReads == 0 && displayReads == 0,
+        XCTAssertTrue(permissionReads == 0 && windowReads == 0 && displayReads == 0,
               "paused checks do not observe permission, windows or displays")
         checkText(observed(tabs: [], permission: false), disabledText,
                   "disabled checks take precedence over missing permission")
-        check(permissionReads == 0 && windowReads == 0 && displayReads == 0,
+        XCTAssertTrue(permissionReads == 0 && windowReads == 0 && displayReads == 0,
               "disabled checks do not observe permission, windows or displays")
         permissionReads = 0
         windowReads = 0
         displayReads = 0
-        check(observed(permission: false) == .noPermission,
+        XCTAssertTrue(observed(permission: false) == .noPermission,
               "permission denial takes precedence over failed window observation")
-        check(permissionReads == 1 && windowReads == 0 && displayReads == 0,
+        XCTAssertTrue(permissionReads == 1 && windowReads == 0 && displayReads == 0,
               "permission denial does not read windows or displays")
         checkText(observed(), failureText, "failed window observation with checks enabled")
-        check(displayReads == 0, "failed window observation does not read displays")
+        XCTAssertTrue(displayReads == 0, "failed window observation does not read displays")
         checkText(observed(windows: []), "No Teams share detected",
                   "no share result does not require display observation")
-        check(displayReads == 0, "no share does not read displays")
+        XCTAssertTrue(displayReads == 0, "no share does not read displays")
         checkText(observed(windows: [indicator, chat]), failureText,
                   "failed display observation must not classify a detected share")
-        check(displayReads == 1, "detected share reads display observation")
+        XCTAssertTrue(displayReads == 1, "detected share reads display observation")
+    }
 
+    func testExposure() {
         checkText(detect([], permission: false), "Needs Screen Recording permission",
                   "permission status wording is preserved")
         checkText(detect([], paused: true), "Paused", "pause status wording is preserved")
         checkText(detect([indicator, chat]), "Teams Chat may be visible in your share",
                   "warning status wording is preserved")
-        check(detect([indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
+        XCTAssertTrue(detect([indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
               "partial display exposure remains a warning")
         let coveringWindow = window("Synthetic cover", display, owner: "Other App")
-        check(detect([coveringWindow, indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
+        XCTAssertTrue(detect([coveringWindow, indicator, chat]) == .chatExposed([chat], display, wholeDisplay: true),
               "a watched window behind another app still counts")
         let activity = window("Activity | Synthetic", chat.bounds)
-        check(detect([indicator, activity], tabs: ["Activity"]) == .chatExposed([activity], display, wholeDisplay: true),
+        XCTAssertTrue(detect([indicator, activity], tabs: ["Activity"]) == .chatExposed([activity], display, wholeDisplay: true),
               "selected Activity tab remains watched")
-        check(detect([indicator, chat], tabs: ["Activity"]) == .sharingClear,
+        XCTAssertTrue(detect([indicator, chat], tabs: ["Activity"]) == .sharingClear,
               "unselected Chat tab does not trigger exposure")
         let otherIndicator = window(sharingIndicatorTitle, display, owner: "Other App")
-        check(detect([otherIndicator, chat]) == .notSharing,
+        XCTAssertTrue(detect([otherIndicator, chat]) == .notSharing,
               "another app's indicator does not count as a Teams share")
         let otherChat = window("Chat | Synthetic", chat.bounds, owner: "Other App")
-        check(detect([indicator, otherChat]) == .sharingClear,
+        XCTAssertTrue(detect([indicator, otherChat]) == .sharingClear,
               "another app's Chat title does not count as a watched window")
         let nonstandardLayer = window("Chat | Synthetic", chat.bounds, layer: 1)
-        check(detect([indicator, nonstandardLayer]) == .sharingClear,
+        XCTAssertTrue(detect([indicator, nonstandardLayer]) == .sharingClear,
               "existing window layer filter is preserved")
 
         let sharedWindow = CGRect(x: 100, y: 100, width: 400, height: 400)
         let windowIndicator = window(sharingIndicatorTitle, sharedWindow)
         let halfOverlap = window("Chat | Synthetic", CGRect(x: 300, y: 100, width: 400, height: 400))
         let lessOverlap = window("Chat | Synthetic", CGRect(x: 301, y: 100, width: 400, height: 400))
-        check(detect([windowIndicator, halfOverlap]) == .chatExposed([halfOverlap], sharedWindow, wholeDisplay: false),
+        XCTAssertTrue(detect([windowIndicator, halfOverlap]) == .chatExposed([halfOverlap], sharedWindow, wholeDisplay: false),
               "existing window-share 50 percent threshold is preserved")
-        check(detect([windowIndicator, lessOverlap]) == .sharingClear,
+        XCTAssertTrue(detect([windowIndicator, lessOverlap]) == .sharingClear,
               "existing window-share below-threshold result is preserved")
 
-        check(detect([indicator, chat]).autoMinimizeTargets == [chat],
+        XCTAssertTrue(detect([indicator, chat]).autoMinimizeTargets == [chat],
               "display share with partial Chat overlap may be minimized")
         let secondDisplay = CGRect(x: 1200, y: 0, width: 1200, height: 800)
         let chatOnSecond = window("Chat | Synthetic", CGRect(x: 1400, y: 100, width: 300, height: 300))
-        check(detect([indicator, chatOnSecond], displays: [display, secondDisplay]) == .sharingClear,
+        XCTAssertTrue(detect([indicator, chatOnSecond], displays: [display, secondDisplay]) == .sharingClear,
               "Chat on another display does not warn")
         let presentation = CGRect(x: 100, y: 100, width: 600, height: 400)
         let presentationIndicator = window(sharingIndicatorTitle, presentation)
         let chatBehind = window("Chat | Synthetic", presentation)
         let windowShare = detect([presentationIndicator, chatBehind])
-        check(windowShare == .chatExposed([chatBehind], presentation, wholeDisplay: false),
+        XCTAssertTrue(windowShare == .chatExposed([chatBehind], presentation, wholeDisplay: false),
               "Chat behind a shared presentation window still warns")
-        check(windowShare.autoMinimizeTargets.isEmpty,
+        XCTAssertTrue(windowShare.autoMinimizeTargets.isEmpty,
               "window share is not automatically minimized")
-        check(GuardState.sharingClear.autoMinimizeTargets.isEmpty, "clear share has nothing to minimize")
+        XCTAssertTrue(GuardState.sharingClear.autoMinimizeTargets.isEmpty, "clear share has nothing to minimize")
+    }
 
+    func testAXMatching() {
         let target = window("Chat | Synthetic", CGRect(x: 100, y: 100, width: 300, height: 300))
         let elsewhere = CGRect(x: 500, y: 100, width: 300, height: 300)
         func candidate(_ title: String?, _ frame: CGRect?) -> AXWindowCandidate {
             AXWindowCandidate(title: title, frame: frame)
         }
-        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere),
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere),
                                          candidate("Chat | Synthetic", target.bounds)]) == .match(1),
               "same-title AX windows are told apart by position")
         let rounded = target.bounds.offsetBy(dx: 0.5, dy: -0.5)
-        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", rounded)]) == .match(0),
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Chat | Synthetic", rounded)]) == .match(0),
               "sub-point rounding still matches")
-        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", target.bounds),
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Chat | Synthetic", target.bounds),
                                          candidate("Chat | Synthetic", target.bounds)]) == .ambiguous,
               "two indistinguishable AX windows are ambiguous")
-        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere)]) == .stale,
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Chat | Synthetic", elsewhere)]) == .stale,
               "a moved window is stale")
-        check(matchAXWindow(target, in: [candidate("Calendar | Synthetic", target.bounds)]) == .stale,
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Calendar | Synthetic", target.bounds)]) == .stale,
               "a retitled window is stale")
-        check(matchAXWindow(target, in: [candidate(nil, target.bounds)]) == .unreadable,
+        XCTAssertTrue(matchAXWindow(target, in: [candidate(nil, target.bounds)]) == .unreadable,
               "an unreadable title is not guessed")
-        check(matchAXWindow(target, in: [candidate("Chat | Synthetic", nil)]) == .unreadable,
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Chat | Synthetic", nil)]) == .unreadable,
               "an unreadable frame is not guessed")
-        check(matchAXWindow(target, in: [candidate("Calendar | Synthetic", nil),
+        XCTAssertTrue(matchAXWindow(target, in: [candidate("Calendar | Synthetic", nil),
                                          candidate("Chat | Synthetic", target.bounds)]) == .match(1),
               "an unreadable frame on another title does not block a clear match")
-        check(matchAXWindow(target, in: [candidate(nil, elsewhere),
+        XCTAssertTrue(matchAXWindow(target, in: [candidate(nil, elsewhere),
                                          candidate("Chat | Synthetic", target.bounds)]) == .match(1),
               "an untitled window elsewhere does not block a clear match")
-        check(matchAXWindow(target, in: [candidate(nil, nil)]) == .unreadable,
+        XCTAssertTrue(matchAXWindow(target, in: [candidate(nil, nil)]) == .unreadable,
               "an untitled window with no frame is not guessed")
+    }
 
+    func testAttemptTargets() {
         let displayShare = detect([indicator, chat])
-        check(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: true) == [chat],
+        XCTAssertTrue(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: true) == [chat],
               "display share with minimizing on is attempted")
-        check(minimizeAttemptTargets(displayShare, autoMinimize: false, trusted: true).isEmpty,
+        XCTAssertTrue(minimizeAttemptTargets(displayShare, autoMinimize: false, trusted: true).isEmpty,
               "no attempt when minimizing is off")
-        check(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: false).isEmpty,
+        XCTAssertTrue(minimizeAttemptTargets(displayShare, autoMinimize: true, trusted: false).isEmpty,
               "no attempt without Accessibility trust")
-        check(minimizeAttemptTargets(windowShare, autoMinimize: true, trusted: true).isEmpty,
+        XCTAssertTrue(minimizeAttemptTargets(windowShare, autoMinimize: true, trusted: true).isEmpty,
               "no attempt for a window share")
-        check(minimizeAttemptTargets(.paused, autoMinimize: true, trusted: true).isEmpty,
+        XCTAssertTrue(minimizeAttemptTargets(.paused, autoMinimize: true, trusted: true).isEmpty,
               "no attempt while paused")
+    }
 
+    func testMinimizeAttempts() {
         var performed = 0
         var background: [() -> Void] = []
         var mainQueue: [() -> Void] = []
@@ -206,115 +213,127 @@ struct StatusTests {
         }
 
         attempts.start([chat]) { delivered.append($0) }
-        check(performed == 0 && delivered.isEmpty, "starting an attempt does not run it on the caller")
+        XCTAssertTrue(performed == 0 && delivered.isEmpty, "starting an attempt does not run it on the caller")
         attempts.start([chat]) { delivered.append($0) }
         runPending()
-        check(performed == 1 && delivered == [[.failed(.cannotComplete)]],
+        XCTAssertTrue(performed == 1 && delivered == [[.failed(.cannotComplete)]],
               "only one attempt runs while one is in flight")
         nextOutcomes = [.minimized]
         attempts.start([chat]) { delivered.append($0) }
         runPending()
-        check(performed == 2 && delivered.last == [.minimized], "a failed attempt is retried on the next start")
+        XCTAssertTrue(performed == 2 && delivered.last == [.minimized], "a failed attempt is retried on the next start")
 
         delivered = []
         attempts.start([chat]) { delivered.append($0) }
         attempts.cancel()
         attempts.start([chat]) { delivered.append($0) }
-        check(background.count <= 1, "cancel does not allow a second attempt while the first runs")
+        XCTAssertTrue(background.count <= 1, "cancel does not allow a second attempt while the first runs")
         runPending()
-        check(performed == 3, "cancel and restart before the old attempt finishes runs it only once")
-        check(delivered.isEmpty, "a cancelled attempt's result is dropped")
+        XCTAssertTrue(performed == 3, "cancel and restart before the old attempt finishes runs it only once")
+        XCTAssertTrue(delivered.isEmpty, "a cancelled attempt's result is dropped")
         attempts.start([chat]) { delivered.append($0) }
         runPending()
-        check(performed == 4 && delivered == [[.minimized]], "after the cancelled attempt finishes, a new one runs")
-        check(writes == 3, "an attempt cancelled before it runs makes no write")
+        XCTAssertTrue(performed == 4 && delivered == [[.minimized]], "after the cancelled attempt finishes, a new one runs")
+        XCTAssertTrue(writes == 3, "an attempt cancelled before it runs makes no write")
 
         delivered = []
         betweenReadAndWrite = { attempts.cancel() }
         attempts.start([chat]) { delivered.append($0) }
         runPending()
-        check(performed == 5 && writes == 3, "a cancel between reading and writing stops the write")
-        check(delivered.isEmpty, "a cancel between reading and writing drops the result")
+        XCTAssertTrue(performed == 5 && writes == 3, "a cancel between reading and writing stops the write")
+        XCTAssertTrue(delivered.isEmpty, "a cancel between reading and writing drops the result")
         betweenReadAndWrite = {}
         attempts.start([chat]) { delivered.append($0) }
         runPending()
-        check(writes == 4 && delivered == [[.minimized]], "the next attempt after that cancel writes")
+        XCTAssertTrue(writes == 4 && delivered == [[.minimized]], "the next attempt after that cancel writes")
+    }
 
-        check(minimizeNote([]) == nil, "no note when nothing was attempted")
-        check(minimizeNote([.minimized, .minimized]) == nil, "no note when everything was minimized")
-        check(minimizeNote([.skippedAmbiguous]) == "Not minimized: more than one matching Teams window",
+    func testMinimizeNotes() {
+        XCTAssertTrue(minimizeNote([]) == nil, "no note when nothing was attempted")
+        XCTAssertTrue(minimizeNote([.minimized, .minimized]) == nil, "no note when everything was minimized")
+        XCTAssertTrue(minimizeNote([.skippedAmbiguous]) == "Not minimized: more than one matching Teams window",
               "ambiguous note")
-        check(minimizeNote([.skippedStale]) == "Not minimized: the Teams window changed", "stale note")
-        check(minimizeNote([.skippedUnreadable]) == "Not minimized: couldn't read the Teams window",
+        XCTAssertTrue(minimizeNote([.skippedStale]) == "Not minimized: the Teams window changed", "stale note")
+        XCTAssertTrue(minimizeNote([.skippedUnreadable]) == "Not minimized: couldn't read the Teams window",
               "unreadable note")
-        check(minimizeNote([.failed(.cannotComplete)]) == "Not minimized: Teams did not respond",
+        XCTAssertTrue(minimizeNote([.failed(.cannotComplete)]) == "Not minimized: Teams did not respond",
               "failed or timed-out note")
-        check(minimizeNote([.minimized, .skippedStale, .failed(.failure)]) == "Not minimized: Teams did not respond",
+        XCTAssertTrue(minimizeNote([.minimized, .skippedStale, .failed(.failure)]) == "Not minimized: Teams did not respond",
               "a mixed result reports the failure")
-        check(minimizeNote([.cancelled]) == nil, "a cancelled write adds no note")
+        XCTAssertTrue(minimizeNote([.cancelled]) == nil, "a cancelled write adds no note")
+    }
 
+    func testPrefs() {
         // An absolute suite path keeps the throwaway settings file out of
         // ~/Library/Preferences.
         let suiteName = FileManager.default.temporaryDirectory
             .appendingPathComponent("blindspot-tests-\(UUID().uuidString)").path
         let realStore = Prefs.store
         Prefs.store = UserDefaults(suiteName: suiteName)!
-        check(!Prefs.autoMinimize, "minimizing is off when no choice is stored")
+        XCTAssertTrue(!Prefs.autoMinimize, "minimizing is off when no choice is stored")
         Prefs.autoMinimize = true
-        check(Prefs.autoMinimize, "a stored choice to minimize is kept")
+        XCTAssertTrue(Prefs.autoMinimize, "a stored choice to minimize is kept")
         Prefs.autoMinimize = false
-        check(!Prefs.autoMinimize, "a stored choice not to minimize is kept")
-        check(!Prefs.screenRecordingRequested, "Screen Recording has not been requested in fresh settings")
+        XCTAssertTrue(!Prefs.autoMinimize, "a stored choice not to minimize is kept")
+        XCTAssertTrue(!Prefs.screenRecordingRequested, "Screen Recording has not been requested in fresh settings")
         Prefs.store.removePersistentDomain(forName: suiteName)
         Prefs.store = realStore
         try? FileManager.default.removeItem(atPath: suiteName + ".plist")
+    }
 
-        check(shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: false),
+    func testSetup() {
+        XCTAssertTrue(shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: false),
               "first launch without Screen Recording opens setup")
-        check(!shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: true),
+        XCTAssertTrue(!shouldOpenSetupAtLaunch(screenGranted: false, screenRequested: true),
               "a launch after the prompt was shown does not open setup again")
-        check(!shouldOpenSetupAtLaunch(screenGranted: true, screenRequested: false),
+        XCTAssertTrue(!shouldOpenSetupAtLaunch(screenGranted: true, screenRequested: false),
               "a launch with Screen Recording allowed does not open setup")
-        check(screenRecordingAction(granted: false, requested: false) == .request,
+        XCTAssertTrue(screenRecordingAction(granted: false, requested: false) == .request,
               "the setup button asks macOS the first time")
-        check(screenRecordingAction(granted: false, requested: true) == .openSettings,
+        XCTAssertTrue(screenRecordingAction(granted: false, requested: true) == .openSettings,
               "after the prompt was shown the button opens System Settings")
-        check(screenRecordingAction(granted: true, requested: false) == .openSettings,
+        XCTAssertTrue(screenRecordingAction(granted: true, requested: false) == .openSettings,
               "with access allowed the button opens System Settings")
-        check(screenRecordingHint(granted: false, requested: true) == "If you already allowed it, quit and reopen Blindspot.",
+        XCTAssertTrue(screenRecordingHint(granted: false, requested: true) == "If you already allowed it, quit and reopen Blindspot.",
               "relaunch hint after the prompt without access")
-        check(screenRecordingHint(granted: false, requested: false) == nil, "no relaunch hint before the prompt")
-        check(screenRecordingHint(granted: true, requested: true) == nil, "no relaunch hint once allowed")
+        XCTAssertTrue(screenRecordingHint(granted: false, requested: false) == nil, "no relaunch hint before the prompt")
+        XCTAssertTrue(screenRecordingHint(granted: true, requested: true) == nil, "no relaunch hint once allowed")
+    }
 
+    func testAccessibilityNote() {
         let accessibilityText = "Not minimized: needs Accessibility permission"
-        check(accessibilityNote(displayShare, autoMinimize: true, trusted: false) == accessibilityText,
+        XCTAssertTrue(accessibilityNote(displayShare, autoMinimize: true, trusted: false) == accessibilityText,
               "minimizing on without Accessibility explains why nothing was minimized")
-        check(accessibilityNote(displayShare, autoMinimize: false, trusted: false) == nil,
+        XCTAssertTrue(accessibilityNote(displayShare, autoMinimize: false, trusted: false) == nil,
               "no Accessibility note when minimizing is off")
-        check(accessibilityNote(displayShare, autoMinimize: true, trusted: true) == nil,
+        XCTAssertTrue(accessibilityNote(displayShare, autoMinimize: true, trusted: true) == nil,
               "no Accessibility note when trusted")
-        check(accessibilityNote(windowShare, autoMinimize: true, trusted: false) == nil,
+        XCTAssertTrue(accessibilityNote(windowShare, autoMinimize: true, trusted: false) == nil,
               "no Accessibility note for a window share")
-        check(accessibilityNote(.paused, autoMinimize: true, trusted: false) == nil,
+        XCTAssertTrue(accessibilityNote(.paused, autoMinimize: true, trusted: false) == nil,
               "no Accessibility note while paused")
+    }
 
-        check(previewPlacement(state: .notSharing, windows: [indicator, chat], permission: true) == .sharing,
+    func testPreviewPlacement() {
+        XCTAssertTrue(previewPlacement(state: .notSharing, windows: [indicator, chat], permission: true) == .sharing,
               "test warning is not shown during a Teams share")
-        check(previewPlacement(state: .notSharing, windows: [chat], permission: true) == .anyScreen,
+        XCTAssertTrue(previewPlacement(state: .notSharing, windows: [chat], permission: true) == .anyScreen,
               "test warning can use any screen when nothing is shared")
-        check(previewPlacement(state: .notSharing, windows: nil, permission: true) == .unknown,
+        XCTAssertTrue(previewPlacement(state: .notSharing, windows: nil, permission: true) == .unknown,
               "test warning is hidden when windows cannot be read")
-        check(previewPlacement(state: .notSharing, windows: [indicator], permission: false) == .unknown,
+        XCTAssertTrue(previewPlacement(state: .notSharing, windows: [indicator], permission: false) == .unknown,
               "test warning is hidden without Screen Recording")
-        check(previewPlacement(state: .notSharing, windows: [otherIndicator], permission: true) == .anyScreen,
+        XCTAssertTrue(previewPlacement(state: .notSharing, windows: [otherIndicator], permission: true) == .anyScreen,
               "another app's indicator does not count as a share for the test warning")
-        check(previewPlacement(state: .paused, windows: [chat], permission: true) == .checksOff,
+        XCTAssertTrue(previewPlacement(state: .paused, windows: [chat], permission: true) == .checksOff,
               "test warning is not shown while paused, since a new share would not hide it")
-        check(previewPlacement(state: .checksDisabled, windows: [chat], permission: true) == .checksOff,
+        XCTAssertTrue(previewPlacement(state: .checksDisabled, windows: [chat], permission: true) == .checksOff,
               "test warning is not shown while checks are disabled")
-        check(previewPlacement(state: nil, windows: [chat], permission: true) == .unknown,
+        XCTAssertTrue(previewPlacement(state: nil, windows: [chat], permission: true) == .unknown,
               "test warning is not shown before the first check")
+    }
 
+    func testLoginItem() {
         let realAgents = LoginItem.agentsDirectory
         let realExecutable = LoginItem.executablePath
         let realLaunchctl = LoginItem.runLaunchctl
@@ -344,66 +363,63 @@ struct StatusTests {
             return try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
         }
 
-        check(LoginItem.isEnabled == false && launchctlCalls.isEmpty, "no login item when the plist is absent")
+        XCTAssertTrue(LoginItem.isEnabled == false && launchctlCalls.isEmpty, "no login item when the plist is absent")
         writeAgent(appPath)
-        check(LoginItem.isEnabled == true, "a current login item with no disabled entry is enabled")
+        XCTAssertTrue(LoginItem.isEnabled == true, "a current login item with no disabled entry is enabled")
         queryResult = LaunchctlResult(status: 0, output: "\t\"\(label)\" => disabled\n")
-        check(LoginItem.isEnabled == false, "a disabled entry is not enabled")
+        XCTAssertTrue(LoginItem.isEnabled == false, "a disabled entry is not enabled")
         queryResult = LaunchctlResult(status: 0, output: "\t\"\(label)\" => true\n")
-        check(LoginItem.isEnabled == false, "the older disabled wording is not enabled")
+        XCTAssertTrue(LoginItem.isEnabled == false, "the older disabled wording is not enabled")
         queryResult = LaunchctlResult(status: 1, output: "")
-        check(LoginItem.isEnabled == nil, "a failed launchctl query is unknown, not enabled")
+        XCTAssertTrue(LoginItem.isEnabled == nil, "a failed launchctl query is unknown, not enabled")
         queryResult = LaunchctlResult(status: nil, output: "")
-        check(LoginItem.isEnabled == nil, "launchctl that cannot start is unknown, not enabled")
+        XCTAssertTrue(LoginItem.isEnabled == nil, "launchctl that cannot start is unknown, not enabled")
         queryResult = LaunchctlResult(status: 0, output: "")
 
         writeAgent("/Old Place/Blindspot.app/Contents/MacOS/Blindspot")
-        check(LoginItem.isEnabled == false && LoginItem.isStale, "a login item for an old copy is not enabled")
+        XCTAssertTrue(LoginItem.isEnabled == false && LoginItem.isStale, "a login item for an old copy is not enabled")
         launchctlCalls = []
-        check(LoginItem.setEnabled(true) == nil, "enabling an old login item succeeds")
+        XCTAssertTrue(LoginItem.setEnabled(true) == nil, "enabling an old login item succeeds")
         let repaired = readAgent()
-        check(repaired?["ProgramArguments"] as? [String] == [appPath],
+        XCTAssertTrue(repaired?["ProgramArguments"] as? [String] == [appPath],
               "enabling repairs the path, with spaces kept in one argument")
-        check(repaired?["Label"] as? String == label && repaired?["RunAtLoad"] as? Bool == true
+        XCTAssertTrue(repaired?["Label"] as? String == label && repaired?["RunAtLoad"] as? Bool == true
               && (repaired?["KeepAlive"] as? [String: Bool]) == ["SuccessfulExit": false]
               && repaired?["ProcessType"] as? String == "Interactive",
               "repair keeps the label, RunAtLoad, KeepAlive and ProcessType")
-        check(launchctlCalls == [["enable", "\(LoginItem.domain)/\(label)"]],
+        XCTAssertTrue(launchctlCalls == [["enable", "\(LoginItem.domain)/\(label)"]],
               "enabling runs only launchctl enable for this label")
-        check(!LoginItem.isStale && LoginItem.isEnabled == true, "a repaired login item is enabled")
+        XCTAssertTrue(!LoginItem.isStale && LoginItem.isEnabled == true, "a repaired login item is enabled")
 
         let unrelated = agents.appendingPathComponent("com.example.other.plist")
         try? Data("unrelated".utf8).write(to: unrelated)
         launchctlCalls = []
         changeStatus = 1
-        check(LoginItem.setEnabled(true) == "Couldn't turn on Start at Login.", "a failed enable is reported")
-        check(LoginItem.setEnabled(false) == "Couldn't turn off Start at Login.", "a failed disable is reported")
+        XCTAssertTrue(LoginItem.setEnabled(true) == "Couldn't turn on Start at Login.", "a failed enable is reported")
+        XCTAssertTrue(LoginItem.setEnabled(false) == "Couldn't turn off Start at Login.", "a failed disable is reported")
         changeStatus = 0
         let beforeDisable = try? Data(contentsOf: LoginItem.plistURL)
-        check(LoginItem.setEnabled(false) == nil, "a successful disable reports no problem")
-        check((try? Data(contentsOf: LoginItem.plistURL)) == beforeDisable, "disabling leaves the plist alone")
-        check((try? String(contentsOf: unrelated, encoding: .utf8)) == "unrelated", "unrelated login items are untouched")
-        check(launchctlCalls.allSatisfy { $0.last == "\(LoginItem.domain)/\(label)" },
+        XCTAssertTrue(LoginItem.setEnabled(false) == nil, "a successful disable reports no problem")
+        XCTAssertTrue((try? Data(contentsOf: LoginItem.plistURL)) == beforeDisable, "disabling leaves the plist alone")
+        XCTAssertTrue((try? String(contentsOf: unrelated, encoding: .utf8)) == "unrelated", "unrelated login items are untouched")
+        XCTAssertTrue(launchctlCalls.allSatisfy { $0.last == "\(LoginItem.domain)/\(label)" },
               "launchctl changes only ever name this label")
 
         try? FileManager.default.removeItem(at: LoginItem.plistURL)
         launchctlCalls = []
-        check(LoginItem.setEnabled(true) == nil && readAgent()?["ProgramArguments"] as? [String] == [appPath],
+        XCTAssertTrue(LoginItem.setEnabled(true) == nil && readAgent()?["ProgramArguments"] as? [String] == [appPath],
               "enabling with no plist writes one")
-        check(launchctlCalls.count == 1, "enabling with no plist then runs enable")
+        XCTAssertTrue(launchctlCalls.count == 1, "enabling with no plist then runs enable")
 
         try? FileManager.default.removeItem(at: agents)
         try? Data().write(to: agents)
         launchctlCalls = []
-        check(LoginItem.setEnabled(true) == "Couldn't save the login item.", "a failed write is reported")
-        check(launchctlCalls.isEmpty, "a failed write does not run launchctl")
+        XCTAssertTrue(LoginItem.setEnabled(true) == "Couldn't save the login item.", "a failed write is reported")
+        XCTAssertTrue(launchctlCalls.isEmpty, "a failed write does not run launchctl")
 
         try? FileManager.default.removeItem(at: loginRoot)
         LoginItem.agentsDirectory = realAgents
         LoginItem.executablePath = realExecutable
         LoginItem.runLaunchctl = realLaunchctl
-
-        print("\(checks - failures)/\(checks) checks passed")
-        if failures > 0 { exit(1) }
     }
 }

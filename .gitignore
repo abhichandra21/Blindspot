@@ -2,3 +2,5 @@
 Blindspot.app/
 *.tmp
 .DS_Store
+# Swift package build output
+.build/

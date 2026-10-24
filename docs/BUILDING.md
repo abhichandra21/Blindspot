@@ -14,8 +14,8 @@ cd Blindspot
 open Blindspot.app
 ```
 
-`build.sh` compiles `main.swift` into `Blindspot.app` in the same folder.
-The whole app is that one Swift file.
+`build.sh` compiles the Swift files in `Sources/Blindspot` into `Blindspot.app` in the same folder.
+To run the tests, use `swift test`; this needs full Xcode, not just the Command Line Tools.
 Then grant permissions and set up login as in [Install](INSTALL.md), steps 3 and 4.
 
 After rebuilding, restart the running copy: right-click the shield, choose **Quit Blindspot**, and open the app again.
