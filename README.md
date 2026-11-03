@@ -5,7 +5,7 @@ A macOS menu bar app that warns you when a Microsoft Teams chat may be visible i
 If a Teams Chat or Activity window is on the screen you share, everyone in the meeting can read it.
 Blindspot checks about once a second, so it notices within a second or so, then:
 
-- plays a warning sound and turns its menu bar shield red,
+- plays a warning sound and turns its menu bar icon red,
 - shows a red banner on a screen you are *not* sharing,
 - and, if you turn on minimizing, minimizes those Teams windows when you share a whole screen.
 
@@ -27,7 +27,7 @@ Needs macOS 13 or later on Apple silicon, and the new Microsoft Teams for Mac.
 
 ## Use it
 
-- **Left-click** the shield to pause or resume.
+- **Left-click** the icon to pause or resume.
   Filled means running, outline means paused or checks are off.
 - **Right-click** for Settings and Quit.
 - Minimizing is off until you turn it on in **Settings > Detection**.
@@ -36,18 +36,18 @@ Needs macOS 13 or later on Apple silicon, and the new Microsoft Teams for Mac.
   It shows the banner with sample text for a few seconds and never minimizes anything.
   It works only while checks are running and no Teams share is detected.
 
-## What the shield says
+## What the icon says
 
-Right-click the shield to read its status, or hold the pointer over it.
+Right-click the icon to read its status, or hold the pointer over it.
 
-| Status | Shield |
+| Status | Icon |
 |---|---|
-| Paused | Outline |
-| Checks disabled: no Teams tabs selected | Outline |
-| Needs Screen Recording permission | Lock |
-| Unable to check Teams sharing | Orange |
-| No Teams share detected | Filled |
-| Sharing; no watched Teams windows detected in the shared area | Check mark |
+| Paused | Outline eye |
+| Checks disabled: no Teams tabs selected | Outline eye |
+| Needs Screen Recording permission | Outline eye, orange dot |
+| Unable to check Teams sharing | Outline eye, orange dot |
+| No Teams share detected | Solid eye |
+| Sharing; no watched Teams windows detected in the shared area | Solid eye |
 | Teams Chat may be visible in your share | Red |
 | Teams Activity may be visible in your share | Red |
 
@@ -80,6 +80,9 @@ The warning stays in place in every case.
   For whole-screen shares, when minimizing is on and an attempt can't be made or fails, the menu says why.
 - With one screen there is nowhere safe for the banner, so you get the sound and red icon only.
 - It relies on how the new Teams names its windows ("Chat | ..." and "Activity | ..." in English), not a documented API, so a Teams update or another language could break detection.
+- A chat popped out into its own window is not detected, whether you share that window or the whole screen.
+  Teams names a popout with just the chat's name, without the "Chat | ..." prefix.
+  See [#7](../../issues/7).
 - Teams notification pop-ups are separate from the Chat and Activity windows and are not detected.
   Teams can turn them off while you share: see [Change your status in Microsoft Teams](https://support.microsoft.com/en-us/teams/notifications-settings/change-your-status-in-microsoft-teams) for **Set my status to Do not disturb when I'm sharing my screen**.
 

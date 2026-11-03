@@ -162,7 +162,7 @@ final class SettingsWindowController: NSObject {
             option(soundBox, "Plays a short sound when a Teams chat may be visible in your share."),
             option(previewRow, "Shows the warning with sample text for a few seconds. "
                 + "Never minimizes anything.", title: "Test Warning"),
-            note("Click the menu bar shield to pause or resume. Right-click it for Settings and Quit."),
+            note("Click the menu bar icon to pause or resume. Right-click it for Settings and Quit."),
         ], footer: quit)
 
         let tabRow = NSStackView(views: tabBoxes)
@@ -212,9 +212,11 @@ final class SettingsWindowController: NSObject {
     }
 
     private func aboutPage() -> NSView {
-        let icon = NSImageView(image: NSImage(systemSymbolName: "shield.fill", accessibilityDescription: nil) ?? NSImage())
-        icon.symbolConfiguration = .init(pointSize: 48, weight: .regular)
-        icon.contentTintColor = .controlAccentColor
+        // The app icon, so About always matches the Dock and Finder.
+        let icon = NSImageView(image: NSApp.applicationIconImage)
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
         let name = NSTextField(labelWithString: "Blindspot")
         name.font = .systemFont(ofSize: 17, weight: .semibold)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
