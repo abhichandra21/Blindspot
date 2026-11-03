@@ -27,7 +27,7 @@ Do one of these, once:
   open /Applications/Blindspot.app
   ```
 
-A shield appears in the menu bar.
+An icon of a screen with an eye appears in the menu bar.
 
 ## 3. Grant permissions
 
@@ -39,7 +39,7 @@ A shield appears in the menu bar.
 On first launch, Blindspot opens **Settings** on the **Permissions** tab; click **Allow Screen Recording...** to get the macOS prompt.
 Accessibility is asked for only when you turn on minimizing in the **Detection** tab.
 If you never changed the minimize setting, minimizing is now off until you turn it on in **Detection**.
-To come back later, right-click the shield, choose **Settings**, and open the **Permissions** tab.
+To come back later, right-click the icon, choose **Settings**, and open the **Permissions** tab.
 Each permission shows a green check or a red cross, with a button to the right page in System Settings.
 If Accessibility is not allowed and minimizing is off, it shows a gray dash instead, since it is not needed then.
 If macOS offers **Quit & Reopen** after you turn one on, accept it.
@@ -59,7 +59,7 @@ If turning it on or off fails, the checkbox goes back to what it was and a short
 With Homebrew: quit Blindspot, run `brew upgrade --cask blindspot`, then repeat step 2.
 
 Without Homebrew:
-Right-click the shield and choose **Quit Blindspot**; a second copy would close itself while the old one is running.
+Right-click the icon and choose **Quit Blindspot**; a second copy would close itself while the old one is running.
 Then download the new release and replace the app in Applications.
 Repeat step 2.
 If you put the new copy somewhere else, turn **Start at Login** on again.
@@ -75,7 +75,7 @@ With or without --zap, step 4 removes the permission entries.
 
 Without Homebrew:
 
-1. Right-click the shield and choose **Quit Blindspot**.
+1. Right-click the icon and choose **Quit Blindspot**.
 2. Delete `Blindspot.app`.
 3. If you turned on Start at Login, delete `~/Library/LaunchAgents/com.abhichandra.blindspot.plist`.
 4. Optionally remove Blindspot from **Screen Recording** and **Accessibility** in **System Settings > Privacy & Security**.

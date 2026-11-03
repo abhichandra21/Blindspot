@@ -96,44 +96,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         switch newState {
         case .paused:
-            show(symbol: "shield", text: newState.statusText)
+            show(menuBarImage(solid: false), text: newState.statusText)
             hideWarning()
         case .checksDisabled:
-            show(symbol: "shield", text: newState.statusText)
+            show(menuBarImage(solid: false), text: newState.statusText)
             hideWarning()
         case .noPermission:
-            show(symbol: "lock.shield.fill", text: newState.statusText)
+            show(menuBarImage(solid: false, dot: .systemOrange), text: newState.statusText)
             hideWarning()
         case .observationFailed:
-            show(symbol: "exclamationmark.shield.fill", text: newState.statusText, tint: .systemOrange)
+            show(menuBarImage(solid: false, dot: .systemOrange), text: newState.statusText)
             hideWarning()
         case .notSharing:
-            show(symbol: "shield.fill", text: newState.statusText)
+            show(menuBarImage(solid: true), text: newState.statusText)
             hideWarning()
         case .sharingClear:
-            show(symbol: "checkmark.shield.fill", text: newState.statusText)
+            show(menuBarImage(solid: true), text: newState.statusText)
             hideWarning()
         case .chatExposed(let windows, let shared, _):
             let tab = tabName(windows[0])
             // Overlap is by window bounds, so a chat hidden behind another
             // window still counts. Hence "may be".
-            show(symbol: "exclamationmark.shield.fill", text: newState.statusText,
-                 tint: .systemRed)
+            show(menuBarImage(solid: true, exposed: true), text: newState.statusText)
             if !wasExposed && Prefs.playSound { NSSound(named: "Funk")?.play() }
             showWarning("Teams \(tab) may be visible in your screen share", avoiding: shared)
         }
     }
 
-    // Like a full or empty cup: filled shield while checking, outline while
-    // paused or disabled. Warning is red.
-    private func show(symbol: String, text: String, tint: NSColor? = nil) {
-        var image = NSImage(systemSymbolName: symbol, accessibilityDescription: text)
-        if let tint {
-            image = image?.withSymbolConfiguration(.init(paletteColors: [tint]))
-            image?.isTemplate = false
-        } else {
-            image?.isTemplate = true
-        }
+    private func show(_ image: NSImage, text: String) {
+        image.accessibilityDescription = text
         statusItem.button?.image = image
         statusLine.title = text
         updateToolTip()
@@ -240,6 +231,81 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 if CommandLine.arguments.contains("--once") {
     print(currentState())
     exit(0)
+}
+
+// A small display with an eye on it: your screen is being seen. A solid eye
+// while watching, an outline eye while off, all red when a chat may be exposed.
+// A dot means Blindspot needs something. Without color the image is a
+// template, so macOS colors it like the rest of the menu bar.
+func menuBarImage(solid: Bool, exposed: Bool = false, dot: NSColor? = nil) -> NSImage {
+    let iconSize = NSSize(width: 22, height: 16)
+    let dotDiameter: CGFloat = 7
+    // Room for the dot above and to the right of the display.
+    let dotRoom = dot == nil ? NSSize.zero : NSSize(width: 3, height: 2)
+    let size = NSSize(width: iconSize.width + dotRoom.width, height: iconSize.height + dotRoom.height)
+    // Flipped, so coordinates run top-down like the design mock-ups.
+    let image = NSImage(size: size, flipped: true) { _ in
+        NSGraphicsContext.saveGraphicsState()
+        let shift = NSAffineTransform()
+        shift.translateX(by: 0, yBy: dotRoom.height)
+        shift.concat()
+        let ink = exposed ? NSColor.systemRed : NSColor.black
+        ink.set()
+
+        let screen = NSBezierPath(roundedRect: NSRect(x: 1.6, y: 1.4, width: 18.8, height: 11), xRadius: 2, yRadius: 2)
+        screen.lineWidth = 1.3
+        screen.stroke()
+        let stand = NSBezierPath()
+        stand.move(to: NSPoint(x: 8, y: 15))
+        stand.line(to: NSPoint(x: 14, y: 15))
+        stand.lineWidth = 1.4
+        stand.lineCapStyle = .round
+        stand.stroke()
+
+        let center = NSPoint(x: 11, y: 6.9)
+        func circle(_ radius: CGFloat) -> NSBezierPath {
+            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
+        }
+        if solid {
+            // A ring cut around the pupil, like Apple's eye.fill.
+            eyePath(center: center, halfWidth: 5.4, halfHeight: 3.1).fill()
+            NSGraphicsContext.current?.compositingOperation = .destinationOut
+            circle(2.4).fill()
+            NSGraphicsContext.current?.compositingOperation = .sourceOver
+            circle(1.4).fill()
+        } else {
+            let eye = eyePath(center: center, halfWidth: 5, halfHeight: 2.9)
+            eye.lineWidth = 1.3
+            eye.lineJoinStyle = .round
+            eye.stroke()
+            circle(1.3).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+
+        guard let dot else { return true }
+        // Not a template once it has a dot, so match the menu bar text color.
+        NSColor.labelColor.set()
+        NSRect(origin: .zero, size: size).fill(using: .sourceAtop)
+        dot.setFill()
+        NSBezierPath(ovalIn: NSRect(x: size.width - dotDiameter, y: 0, width: dotDiameter, height: dotDiameter)).fill()
+        return true
+    }
+    image.isTemplate = !exposed && dot == nil
+    return image
+}
+
+private func eyePath(center c: NSPoint, halfWidth w: CGFloat, halfHeight h: CGFloat) -> NSBezierPath {
+    // Cubic control points at 4/3 of the height give a peak of exactly h.
+    let path = NSBezierPath()
+    path.move(to: NSPoint(x: c.x - w, y: c.y))
+    path.curve(to: NSPoint(x: c.x + w, y: c.y),
+               controlPoint1: NSPoint(x: c.x - w / 2, y: c.y - h * 4 / 3),
+               controlPoint2: NSPoint(x: c.x + w / 2, y: c.y - h * 4 / 3))
+    path.curve(to: NSPoint(x: c.x - w, y: c.y),
+               controlPoint1: NSPoint(x: c.x + w / 2, y: c.y + h * 4 / 3),
+               controlPoint2: NSPoint(x: c.x - w / 2, y: c.y + h * 4 / 3))
+    path.close()
+    return path
 }
 
 // One copy only. macOS "Quit & Reopen" after a permission grant can start a
