@@ -233,8 +233,8 @@ if CommandLine.arguments.contains("--once") {
     exit(0)
 }
 
-// A small display with an eye on it: your screen is being seen. A solid eye
-// while watching, an outline eye while off, all red when a chat may be exposed.
+// A small display with an eye on it: your screen is being seen. A solid screen
+// while watching, an empty one while off, all red when a chat may be exposed.
 // A dot means Blindspot needs something. Without color the image is a
 // template, so macOS colors it like the rest of the menu bar.
 func menuBarImage(solid: Bool, exposed: Bool = false, dot: NSColor? = nil) -> NSImage {
@@ -253,8 +253,6 @@ func menuBarImage(solid: Bool, exposed: Bool = false, dot: NSColor? = nil) -> NS
         ink.set()
 
         let screen = NSBezierPath(roundedRect: NSRect(x: 1.6, y: 1.4, width: 18.8, height: 11), xRadius: 2, yRadius: 2)
-        screen.lineWidth = 1.3
-        screen.stroke()
         let stand = NSBezierPath()
         stand.move(to: NSPoint(x: 8, y: 15))
         stand.line(to: NSPoint(x: 14, y: 15))
@@ -262,23 +260,18 @@ func menuBarImage(solid: Bool, exposed: Bool = false, dot: NSColor? = nil) -> NS
         stand.lineCapStyle = .round
         stand.stroke()
 
-        let center = NSPoint(x: 11, y: 6.9)
-        func circle(_ radius: CGFloat) -> NSBezierPath {
-            NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-        }
+        // Like a cup that is full or empty: the outline never changes, so both
+        // states read as the same app. Watching fills the screen, with the eye
+        // cut out of it; off leaves it empty. (An eye alone is too small to read.)
+        screen.lineWidth = 1.3
+        screen.stroke()
         if solid {
-            // A ring cut around the pupil, like Apple's eye.fill.
-            eyePath(center: center, halfWidth: 5.4, halfHeight: 3.1).fill()
+            screen.fill()
+            let center = NSPoint(x: 11, y: 6.9)
             NSGraphicsContext.current?.compositingOperation = .destinationOut
-            circle(2.4).fill()
+            eyePath(center: center, halfWidth: 5.4, halfHeight: 3.1).fill()
             NSGraphicsContext.current?.compositingOperation = .sourceOver
-            circle(1.4).fill()
-        } else {
-            let eye = eyePath(center: center, halfWidth: 5, halfHeight: 2.9)
-            eye.lineWidth = 1.3
-            eye.lineJoinStyle = .round
-            eye.stroke()
-            circle(1.3).fill()
+            NSBezierPath(ovalIn: NSRect(x: center.x - 1.6, y: center.y - 1.6, width: 3.2, height: 3.2)).fill()
         }
         NSGraphicsContext.restoreGraphicsState()
 

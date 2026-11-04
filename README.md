@@ -28,7 +28,7 @@ Needs macOS 13 or later on Apple silicon, and the new Microsoft Teams for Mac.
 ## Use it
 
 - **Left-click** the icon to pause or resume.
-  Filled means running, outline means paused or checks are off.
+  A filled screen means running, an empty screen means paused or checks are off.
 - **Right-click** for Settings and Quit.
 - Minimizing is off until you turn it on in **Settings > Detection**.
   If you never changed that setting in an earlier version, it is now off.
@@ -42,14 +42,14 @@ Right-click the icon to read its status, or hold the pointer over it.
 
 | Status | Icon |
 |---|---|
-| Paused | Outline eye |
-| Checks disabled: no Teams tabs selected | Outline eye |
-| Needs Screen Recording permission | Outline eye, orange dot |
-| Unable to check Teams sharing | Outline eye, orange dot |
-| No Teams share detected | Solid eye |
-| Sharing; no watched Teams windows detected in the shared area | Solid eye |
-| Teams Chat may be visible in your share | Red |
-| Teams Activity may be visible in your share | Red |
+| Paused | Empty screen |
+| Checks disabled: no Teams tabs selected | Empty screen |
+| Needs Screen Recording permission | Empty screen, orange dot |
+| Unable to check Teams sharing | Empty screen, orange dot |
+| No Teams share detected | Filled screen |
+| Sharing; no watched Teams windows detected in the shared area | Filled screen |
+| Teams Chat may be visible in your share | Red filled screen |
+| Teams Activity may be visible in your share | Red filled screen |
 
 For whole-screen shares, when minimizing is on and an attempt can't be made or fails, a second line under the warning says why:
 
