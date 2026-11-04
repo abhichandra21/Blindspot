@@ -52,6 +52,8 @@ func screenRecordingHint(granted: Bool, requested: Bool) -> String? {
     requested && !granted ? "If you already allowed it, quit and reopen Blindspot." : nil
 }
 
+let projectURL = URL(string: "https://github.com/abhichandra21/Blindspot")!
+
 let testWarningSeconds: TimeInterval = 3
 
 enum PreviewPlacement: Equatable {
@@ -221,6 +223,12 @@ final class SettingsWindowController: NSObject {
         name.font = .systemFont(ofSize: 17, weight: .semibold)
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         let versionLabel = secondary("Version \(version)")
+        let link = NSButton(title: projectURL.host.map { "\($0)\(projectURL.path)" } ?? projectURL.absoluteString,
+                            target: self, action: #selector(projectLinkClicked))
+        link.isBordered = false
+        link.contentTintColor = .linkColor
+        link.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+        link.toolTip = projectURL.absoluteString
         let blurb = NSTextField(wrappingLabelWithString:
             "Warns you, and can minimize Teams, when a Teams chat may be visible in a Teams screen share.")
         blurb.alignment = .center
@@ -230,14 +238,19 @@ final class SettingsWindowController: NSObject {
         path.lineBreakMode = .byTruncatingMiddle
         path.preferredMaxLayoutWidth = 380
 
-        let stack = NSStackView(views: [icon, name, versionLabel, blurb, path])
+        let stack = NSStackView(views: [icon, name, versionLabel, link, blurb, path])
         stack.orientation = .vertical
         stack.alignment = .centerX
         stack.spacing = 6
         stack.setCustomSpacing(12, after: icon)
-        stack.setCustomSpacing(14, after: versionLabel)
+        stack.setCustomSpacing(2, after: versionLabel)
+        stack.setCustomSpacing(14, after: link)
         stack.setCustomSpacing(14, after: blurb)
         return framed(stack, centered: true)
+    }
+
+    @objc private func projectLinkClicked() {
+        NSWorkspace.shared.open(projectURL)
     }
 
     // A control (usually a checkbox) with a gray explanation lined up under its text.
