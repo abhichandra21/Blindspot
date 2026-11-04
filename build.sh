@@ -33,12 +33,18 @@ cat > "$app/Contents/Info.plist" <<EOF
 </dict>
 </plist>
 EOF
-# macOS ties the Screen Recording grant to the signature. A fixed local
-# certificate keeps the grant across rebuilds; an ad-hoc signature changes every
-# build, so the grant would need resetting each time.
-identity="TeamsShareGuard Local Signing"
-if security find-certificate -c "$identity" >/dev/null 2>&1; then
-    codesign --force --sign "$identity" "$app"
+# macOS ties the Screen Recording grant to the signature. A fixed certificate
+# keeps the grant across rebuilds; an ad-hoc signature changes every build, so
+# the grant would need resetting each time. Release builds set SIGN_IDENTITY
+# and SIGN_KEYCHAIN to the release certificate; local builds use the local one.
+identity="${SIGN_IDENTITY:-TeamsShareGuard Local Signing}"
+keychain="${SIGN_KEYCHAIN:-}"
+if security find-certificate -c "$identity" ${keychain:+"$keychain"} >/dev/null 2>&1; then
+    codesign --force ${keychain:+--keychain "$keychain"} --sign "$identity" "$app"
+elif [ -n "${SIGN_IDENTITY:-}" ]; then
+    # An ad-hoc release would silently drop every user's Screen Recording grant.
+    echo "error: certificate \"$identity\" not found" >&2
+    exit 1
 else
     echo "warning: certificate \"$identity\" not found, signing ad-hoc" >&2
     codesign --force --sign - "$app"
