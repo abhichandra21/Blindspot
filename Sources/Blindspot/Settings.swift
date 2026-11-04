@@ -343,12 +343,15 @@ final class SettingsWindowController: NSObject {
     }
 
     private func screenRecordingClicked() {
-        switch screenRecordingAction(granted: CGPreflightScreenCaptureAccess(),
-                                     requested: Prefs.screenRecordingRequested) {
+        let granted = CGPreflightScreenCaptureAccess()
+        switch screenRecordingAction(granted: granted, requested: Prefs.screenRecordingRequested) {
         case .request:
             Prefs.screenRecordingRequested = true
             CGRequestScreenCaptureAccess()
         case .openSettings:
+            // If the grant was removed (by tccutil or a re-signed update), Blindspot is
+            // missing from the Screen Recording list. Asking again puts it back.
+            if !granted { CGRequestScreenCaptureAccess() }
             screenStatus.openSystemSettings()
         }
         refreshPermission()
