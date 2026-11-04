@@ -27,7 +27,7 @@ Do one of these, once:
   open /Applications/Blindspot.app
   ```
 
-An icon of a screen with an eye appears in the menu bar.
+A small screen icon appears in the menu bar: filled while Blindspot is watching, empty while it is paused or waiting for permission.
 
 ## 3. Grant permissions
 
