@@ -81,4 +81,6 @@ git push origin v0.2.0
 ```
 
 The tag sets the app's version (`v0.2.0` becomes `0.2.0`).
-Release builds are signed ad-hoc, since the local certificate never leaves your Mac.
+Release builds are signed with the self-signed "Blindspot Release Signing" certificate, stored as the `RELEASE_CERT_P12` and `RELEASE_CERT_PASSWORD` repository secrets.
+Every release must use that same certificate: macOS keeps the Screen Recording grant across updates only while the signature's certificate stays the same.
+The workflow fails a tag build signed with any other certificate.

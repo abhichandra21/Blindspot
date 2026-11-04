@@ -31,6 +31,26 @@ jobs:
       - name: Test
         run: swift test
 
+      # Tags only: every release is signed with the same certificate, so macOS
+      # keeps the Screen Recording grant when someone updates.
+      - name: Import release certificate
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          RELEASE_CERT_P12: ${{ secrets.RELEASE_CERT_P12 }}
+          RELEASE_CERT_PASSWORD: ${{ secrets.RELEASE_CERT_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password="$(openssl rand -hex 16)"
+          printf '%s' "$RELEASE_CERT_P12" | base64 --decode > "$RUNNER_TEMP/release.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/release.p12" -k "$keychain" -P "$RELEASE_CERT_PASSWORD" -T /usr/bin/codesign >/dev/null
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          rm "$RUNNER_TEMP/release.p12"
+          echo "SIGN_KEYCHAIN=$keychain" >> "$GITHUB_ENV"
+          echo "SIGN_IDENTITY=Blindspot Release Signing" >> "$GITHUB_ENV"
+
       - name: Build
         run: |
           # On a tag, v0.2.0 becomes version 0.2.0 in the app.
@@ -39,6 +59,11 @@ jobs:
           fi
           ./build.sh
           codesign --verify --strict Blindspot.app
+          # A different certificate would drop every user's grant, so check it is this one.
+          if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+            codesign -d -r- Blindspot.app 2>&1 | grep -q 'certificate leaf = H"d413574c24136389717068907d77c9ccb1ebab41"' \
+              || { echo "error: release is not signed with the release certificate" >&2; exit 1; }
+          fi
           xcrun vtool -show-build Blindspot.app/Contents/MacOS/Blindspot
 
       - name: Zip
